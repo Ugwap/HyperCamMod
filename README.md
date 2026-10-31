@@ -8,8 +8,9 @@ Repo ini **tidak menyimpan APK proprietary Xiaomi**. Yang disimpan hanya source 
 skrip, template, dan dokumentasi. Tidak perlu re-sign APK kamera, jadi tidak kena
 pengecekan signature / `sharedUserId`.
 
-> Status: **jalan** di Poco X7 Pro (`2412DPC0AG` / `rodin`), HyperOS V816,
-> Android 17 (SDK 37). Versi modul: **1.1.0**.
+> Status: **jalan** di Poco X7 Pro (`2412DPC0AG` / `rodin`), HyperOS `4.0.0.12.XPTCNXM`
+> (V816), Android 17 (SDK 37), kamera **6.4.000250.3**. Versi modul: **1.1.0**.
+> Detail & batasan versi ada di [Kompatibilitas](#kompatibilitas).
 
 ## Yang dilakukan modul
 
@@ -30,6 +31,67 @@ Tidak menyentuh capture, video, zoom, atau Pro mode.
 Karena memilih **preview full-screen (crop)**, viewfinder ter-crop sekitar 40% di
 kiri–kanan dibanding hasil foto 4:3. Hasil foto/video tetap normal (tidak di-crop).
 Ini konsekuensi dari mengisi layar 20:9 dengan sensor 4:3.
+
+## Kompatibilitas
+
+Modul **tidak mengunci versi**: tidak ada pengecekan `versionName`/`versionCode`.
+Semua id view dicari saat runtime lewat `Resources.getIdentifier`, jadi ROM yang hanya
+bergeser nomor resource tetap aman. Yang menentukan jalan/tidaknya adalah nama-nama
+internal di APK kamera.
+
+### Sudah diuji
+
+| Item | Nilai |
+| --- | --- |
+| Perangkat | Poco X7 Pro (`2412DPC0AG` / `rodin`) |
+| ROM | HyperOS `4.0.0.12.XPTCNXM` (`ro.miui.ui.version.name` = `V816`) |
+| Android | 17 / SDK 37 |
+| Aplikasi kamera | MiuiCamera **6.4.000250.3** (`versionCode 740002503`) |
+| Path APK | `/product/priv-app/MiuiCamera/MiuiCamera.apk` |
+
+### Ketergantungan
+
+| Yang dicari | Dipakai untuk | Kalau tidak ketemu |
+| --- | --- | --- |
+| package `com.android.camera` | target hook | modul diam (scope salah) |
+| id `camera_app_root` | menempelkan scrim | scrim tidak dipasang |
+| id `preview_surface_layout` + `gl_root_cover` | hitung skala crop preview | zoom dilewati, tampilan asli |
+| id `top_config_background` | memudarkan top bar | top bar tetap solid |
+| class `com.android.camera.ui.ShapeBackGroundView` method `d()` | top bar transparan (paint) | hanya efek ini hilang — bagian paling rapuh karena nama method di-obfuscate |
+| `SurfaceView` di dalam `preview_surface_layout` | objek yang di-zoom | zoom dilewati |
+
+Semua kegagalan di atas bersifat **no-op** dan dicatat di log, bukan crash: kamera
+tetap jalan seperti asli (paling banter efek full-screen-nya tidak muncul).
+
+### Perkiraan dukungan
+
+| Versi kamera / ROM | Status |
+| --- | --- |
+| MiuiCamera 6.x — HyperOS 2/3/4 | kemungkinan jalan (generasi yang diuji) |
+| MiuiCamera 5.x — HyperOS 1 | belum diuji; crop kemungkinan jalan, top bar bisa tidak |
+| MiuiCamera 4.x — MIUI 14 ke bawah | kemungkinan tidak (struktur layout beda generasi) |
+| Foldable/tablet yang preview-nya sudah full-screen | scrim tetap dipasang, zoom otomatis dilewati |
+| Kamera non-Xiaomi (AOSP/GCam) | tidak didukung (package berbeda) |
+
+`minSdk` modul 29 (Android 10+).
+
+### Cara cek di device lain
+
+```powershell
+adb logcat -s LSPosedFramework | Select-String "HyperCamMod"
+```
+
+Tiga baris penanda sukses:
+
+```
+HyperCamMod: aktif di com.android.camera
+HyperCamMod: hook ShapeBackGroundView.d() terpasang
+HyperCamMod: scrim 50% dipasang
+```
+
+Kalau `hook ShapeBackGroundView.d()` gagal, hanya efek top bar transparan yang hilang.
+Kalau `scrim 50% dipasang` tidak muncul, berarti id resource di ROM itu berbeda dan
+daftar id perlu ditambah.
 
 ## Cara build & pasang
 
@@ -114,7 +176,8 @@ akan jalan** — itulah kenapa jalur LSPosed yang dipakai.
 - Setiap update HyperOS, id resource bisa berubah. `HookEntry.java` membaca id lewat
   `Resources.getIdentifier`, jadi tidak hardcode — tapi kalau struktur view berubah,
   perlu penyesuaian.
-- Diuji hanya di device/ROM di atas.
+- Diuji hanya pada konfigurasi di bagian [Kompatibilitas](#kompatibilitas). Versi
+  kamera/ROM lain belum diverifikasi.
 
 ## Lisensi
 
