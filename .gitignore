@@ -4,6 +4,10 @@
 *.zip
 *.jar
 
+# Jar yang wajib ada supaya repo bisa di-build
+!lsposed/app/libs/api-82.jar
+!lsposed/gradle/wrapper/gradle-wrapper.jar
+
 # Hasil kerja lokal
 stock/
 decoded/
@@ -11,6 +15,11 @@ build/
 keys/
 dist/
 tools/
+
+# Gradle / Android lokal
+.gradle/
+local.properties
+captures/
 
 # OS / editor
 .DS_Store

@@ -1,28 +1,84 @@
 # HyperCamMod
 
-Toolkit **systemless (Magisk)** untuk memodifikasi tampilan aplikasi kamera bawaan HyperOS
-(`com.android.camera` / MiuiCamera) di perangkat sendiri.
+Modul **LSPosed** untuk membuat tampilan aplikasi kamera bawaan HyperOS
+(`com.android.camera` / MiuiCamera) jadi **full-screen** — bar hitam di atas/bawah
+hilang, preview menutup seluruh layar, dan ikon atas/bawah tetap terbaca.
 
-Repo ini **tidak menyimpan APK proprietary Xiaomi**. Yang disimpan hanya skrip, template
-modul, dan dokumentasi. APK asli diambil dari HP kamu sendiri lewat ADB.
+Repo ini **tidak menyimpan APK proprietary Xiaomi**. Yang disimpan hanya source modul,
+skrip, template, dan dokumentasi. Tidak perlu re-sign APK kamera, jadi tidak kena
+pengecekan signature / `sharedUserId`.
 
-> Status: **workbench / tahap analisis** — menunggu APK dari perangkat untuk dicek
-> (sharedUserId, signature check, apakah UI-nya XML atau Compose).
+> Status: **jalan** di Poco X7 Pro (`2412DPC0AG` / `rodin`), HyperOS V816,
+> Android 17 (SDK 37). Versi modul: **1.1.0**.
 
-## Peringatan
+## Yang dilakukan modul
 
-- Ini mengubah **aplikasi sistem**. Risiko: kamera crash, aplikasi tidak muncul, bahkan
-  bootloop jika modul salah pasang.
-- Wajib punya **bootloader unlock + Magisk/KernelSU** dan **backup APK asli** (skrip
-  `pull-stock.ps1` melakukannya otomatis).
-- Modul bisa dinonaktifkan/dihapus dari Magisk kapan saja untuk kembali ke asli
-  (lihat [docs/REVERT.md](docs/REVERT.md)).
-- Jangan pernah commit APK, resource hasil decode, atau keystore ke repo publik.
-- APK hasil mod ditandatangani ulang dengan kunci kita. Kalau kamera memakai
-  `sharedUserId` sistem atau pengecekan signature, APK mod **tidak akan jalan** —
-  jalur alternatifnya ada di [docs/RENCANA.md](docs/RENCANA.md).
+1. **Preview center-crop** — SurfaceView preview 4:3 diperbesar (`scale = tinggi layar /
+   tinggi konten`) dengan pivot di tengah area konten, sehingga bar hitam atas/bawah
+   hilang dan preview menutup layar.
+2. **Scrim gradient 50%** (`#80000000`) di area atas (200dp) dan bawah (320dp) supaya
+   ikon/shutter tetap kontras. Tanpa blur/PixelCopy — ringan, tidak membaca frame.
+3. **Lapisan hitam bawaan dimatikan** — `top_cover_layout`, `bottom_cover_layout`,
+   `left/right_cover_layout`, `mask_cover_layout`, `top_config_background`, dst.
+   di-set alpha 0 agar tidak menutupi preview.
+4. **Top bar & status bar transparan** supaya preview terlihat menyatu di belakang ikon.
 
-## Cara kerja
+Tidak menyentuh capture, video, zoom, atau Pro mode.
+
+### Trade-off
+
+Karena memilih **preview full-screen (crop)**, viewfinder ter-crop sekitar 40% di
+kiri–kanan dibanding hasil foto 4:3. Hasil foto/video tetap normal (tidak di-crop).
+Ini konsekuensi dari mengisi layar 20:9 dengan sensor 4:3.
+
+## Cara build & pasang
+
+Prasyarat: JDK 17, Android SDK (compileSdk 35), HP dengan **LSPosed** aktif.
+
+```powershell
+cd lsposed
+.\gradlew.bat assembleDebug
+adb install -r app\build\outputs\apk\debug\app-debug.apk
+```
+
+Lalu di **LSPosed Manager**:
+
+1. Aktifkan modul **HyperCamMod**.
+2. Scope: centang **Camera** (`com.android.camera`).
+3. Force stop kamera (atau reboot), buka kamera lagi.
+
+Cek log kalau tidak berubah:
+
+```powershell
+adb logcat -s LSPosedFramework | Select-String "HyperCamMod"
+```
+
+`local.properties` (path SDK) tidak ikut di-commit — buat sendiri kalau perlu:
+
+```
+sdk.dir=C\:\\Users\\<nama>\\AppData\\Local\\Android\\Sdk
+```
+
+## Isi repo
+
+| Path | Fungsi |
+| --- | --- |
+| `lsposed/` | Source modul LSPosed (Java, hook `HookEntry.java`) |
+| `lsposed/app/libs/api-82.jar` | API Xposed (`compileOnly`) |
+| `scripts/pull-stock.ps1` | Pull APK kamera + `framework-miui-res.apk` dari HP |
+| `scripts/inspect.ps1` | Cek `sharedUserId`, signature, Compose, layout, native libs |
+| `scripts/decode.ps1` | Decode APK dengan apktool (framework MIUI otomatis) |
+| `scripts/build-apk.ps1` | Rebuild, zipalign, sign dengan keystore lokal |
+| `scripts/make-module.ps1` | Bungkus APK hasil sign jadi modul Magisk |
+| `scripts/patch-ios-scrim.ps1` | Patch scrim jalur re-sign (cadangan) |
+| `module/` | Template `module.prop` + `customize.sh` untuk jalur Magisk |
+| `docs/PATCH.md` | Detail patch scrim jalur re-sign |
+| `docs/RENCANA.md` | Analisis kelayakan & jalur alternatif |
+| `docs/REVERT.md` | Cara balik ke kamera asli |
+
+## Jalur cadangan: re-sign APK + modul Magisk
+
+Dipakai hanya kalau LSPosed tidak tersedia. Alurnya:
 
 ```
 HP (root) --adb--> stock/MiuiCamera.apk
@@ -38,49 +94,29 @@ HP (root) --adb--> stock/MiuiCamera.apk
                   zip -> flash di Magisk -> reboot
 ```
 
-Magisk menimpa APK asli secara systemless, jadi partisi sistem tidak berubah permanen.
-
-## Yang dibutuhkan
-
-- Windows + PowerShell
-- JDK 17 (`java`, `keytool` di PATH)
-- Android SDK Platform Tools (`adb`) + Build Tools (`zipalign`, `apksigner`)
-- Magisk v26+ (atau KernelSU dengan dukungan modul Magisk)
-- HP: USB debugging aktif, akses root untuk `adb shell su` (opsional, untuk cek path)
-
-`apktool.jar` diunduh otomatis oleh `scripts/decode.ps1`.
-
-## Quick start
-
 ```powershell
-# 1. Ambil APK + framework MIUI dari HP (butuh HP terhubung)
 powershell -ExecutionPolicy Bypass -File scripts\pull-stock.ps1
-
-# 2. Decode APK
 powershell -ExecutionPolicy Bypass -File scripts\decode.ps1
-
-# 3. Edit tampilan di decoded\res\... lalu build ulang + sign
+powershell -ExecutionPolicy Bypass -File scripts\patch-ios-scrim.ps1
 powershell -ExecutionPolicy Bypass -File scripts\build-apk.ps1
-
-# 4. Bungkus jadi modul Magisk
 powershell -ExecutionPolicy Bypass -File scripts\make-module.ps1
-
-# 5. Flash build\HyperCamMod-*.zip lewat Magisk -> reboot
 ```
 
-## Isi repo
+Modul Magisk bisa dinonaktifkan/dihapus kapan saja (lihat [docs/REVERT.md](docs/REVERT.md)).
+Kalau kamera memakai `sharedUserId` sistem atau pengecekan signature, APK mod **tidak
+akan jalan** — itulah kenapa jalur LSPosed yang dipakai.
 
-| Path | Fungsi |
-| --- | --- |
-| `scripts/pull-stock.ps1` | Pull APK kamera + `framework-miui-res.apk`, simpan info perangkat |
-| `scripts/inspect.ps1` | Cek `sharedUserId`, signature, Compose, layout, native libs |
-| `scripts/decode.ps1` | Decode APK dengan apktool (framework MIUI otomatis) |
-| `scripts/build-apk.ps1` | Rebuild, zipalign, sign dengan keystore lokal |
-| `scripts/make-module.ps1` | Bungkus APK hasil sign jadi modul Magisk sesuai path asli |
-| `module/` | Template `module.prop` + `customize.sh` |
-| `docs/RENCANA.md` | Analisis kelayakan & jalur alternatif (LSPosed/RRO) |
-| `docs/REVERT.md` | Cara balik ke kamera asli |
+## Peringatan
+
+- Ini mengubah tampilan **aplikasi sistem**. Risiko: kamera crash atau modul bentrok
+  dengan update HyperOS. Selalu punya cara disable modul dari LSPosed Manager.
+- Jangan commit APK, resource hasil decode, atau keystore ke repo publik.
+- Setiap update HyperOS, id resource bisa berubah. `HookEntry.java` membaca id lewat
+  `Resources.getIdentifier`, jadi tidak hardcode — tapi kalau struktur view berubah,
+  perlu penyesuaian.
+- Diuji hanya di device/ROM di atas.
 
 ## Lisensi
 
-MIT — hanya untuk skrip dan dokumentasi. Aplikasi kamera HyperOS tetap milik Xiaomi.
+MIT — hanya untuk source modul, skrip, dan dokumentasi. Aplikasi kamera HyperOS tetap
+milik Xiaomi.
