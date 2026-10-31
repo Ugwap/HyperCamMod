@@ -41,15 +41,15 @@ New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 New-Item -ItemType Directory -Force -Path $keysDir | Out-Null
 
 function Resolve-Sdk {
-    $candidates = @(
+    $sdk = @(
         $env:ANDROID_HOME,
         $env:ANDROID_SDK_ROOT,
         (Join-Path $env:LOCALAPPDATA "Android\Sdk")
-    ) | Where-Object { $_ -and (Test-Path $_) }
-    if ($candidates.Count -eq 0) {
+    ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+    if (-not $sdk) {
         throw "Android SDK tidak ditemukan. Set ANDROID_HOME."
     }
-    return $candidates[0]
+    return [string]$sdk
 }
 
 $sdk = Resolve-Sdk

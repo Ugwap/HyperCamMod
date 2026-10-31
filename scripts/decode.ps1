@@ -3,7 +3,7 @@
     Decode APK kamera HyperOS dengan apktool (framework MIUI otomatis).
 
 .DESCRIPTION
-    Mengunduh apktool jika belum ada, memasang framework-miui-res.apk,
+    Mengunduh apktool jika belum ada, memasang framework resource (MIUI/AOSP),
     lalu men-decode stock\MiuiCamera.apk ke folder decoded\.
 
 .EXAMPLE
@@ -44,15 +44,17 @@ if (-not $javaCmd) {
 }
 $java = $javaCmd.Source
 
-$framework = Join-Path $stockDir "framework-miui-res.apk"
-if (Test-Path $framework) {
-    Write-Host "Memasang framework MIUI ..."
-    & java -jar $jarPath if $framework
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "Gagal memasang framework MIUI. Decode mungkin error; coba manual: java -jar tools\apktool.jar if stock\framework-miui-res.apk"
+$frameworks = @(Get-ChildItem -Path $stockDir -Filter "framework*.apk" -File -ErrorAction SilentlyContinue)
+if ($frameworks.Count -gt 0) {
+    foreach ($fw in $frameworks) {
+        Write-Host "Memasang framework $($fw.Name) ..."
+        & $java -jar $jarPath if $fw.FullName
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Gagal memasang $($fw.Name). Decode mungkin error."
+        }
     }
 } else {
-    Write-Warning "framework-miui-res.apk tidak ada. Decode mungkin gagal."
+    Write-Warning "Framework resource (framework-ext-res.apk / framework-res.apk) tidak ada. Decode mungkin gagal."
 }
 
 if ((Test-Path $decodedDir) -and -not $Force) {
@@ -63,7 +65,7 @@ if (Test-Path $decodedDir) {
 }
 
 Write-Host "Decode $apkPath ..."
-& java -jar $jarPath d -f -o $decodedDir $apkPath
+& $java -jar $jarPath d -f -o $decodedDir $apkPath
 if ($LASTEXITCODE -ne 0) {
     throw "apktool gagal decode. Cek pesan di atas (biasanya framework MIUI belum terpasang)."
 }

@@ -68,17 +68,21 @@ if ($apkPaths.Count -gt 1) {
     Write-Host "Split APK terdeteksi ($($apkPaths.Count)). Menyimpan daftar split di info.json."
 }
 
-Write-Host "Mengambil framework MIUI (dibutuhkan apktool) ..."
+Write-Host "Mengambil framework resource (dibutuhkan apktool) ..."
 $frameworkCandidates = @(
+    "/system_ext/framework/framework-ext-res/framework-ext-res.apk",
     "/system/framework/framework-miui-res.apk",
+    "/system/framework/framework-ext-res.apk",
     "/system_ext/framework/framework-miui-res.apk",
     "/product/framework/framework-miui-res.apk"
 )
 $frameworkPulled = $false
+$frameworkLocalName = ""
 foreach ($remote in $frameworkCandidates) {
     $probe = & $adb @adbArgs shell "test -f $remote && echo yes" 2>&1
     if ($probe -match "yes") {
-        $localFramework = Join-Path $stockDir "framework-miui-res.apk"
+        $frameworkLocalName = Split-Path -Leaf $remote
+        $localFramework = Join-Path $stockDir $frameworkLocalName
         & $adb @adbArgs pull $remote $localFramework
         if ($LASTEXITCODE -eq 0) {
             $frameworkPulled = $true
@@ -88,7 +92,7 @@ foreach ($remote in $frameworkCandidates) {
     }
 }
 if (-not $frameworkPulled) {
-    Write-Warning "framework-miui-res.apk tidak ditemukan. Decode mungkin gagal; cari manual di /system/framework."
+    Write-Warning "Framework resource MIUI tidak ditemukan. Decode mungkin gagal; cari manual (framework-ext-res.apk / framework-miui-res.apk)."
 }
 
 Write-Host "Menyimpan metadata ..."
@@ -113,6 +117,7 @@ $info = [ordered]@{
     apkRemotePath = $baseApk
     apkSplits     = @($apkPaths | Where-Object { $_ -ne $baseApk })
     apkLocal      = "stock/MiuiCamera.apk"
+    frameworkLocal = $(if ($frameworkLocalName) { "stock/$frameworkLocalName" } else { $null })
     pulledAt      = (Get-Date).ToString("s")
     props         = $props
 }
