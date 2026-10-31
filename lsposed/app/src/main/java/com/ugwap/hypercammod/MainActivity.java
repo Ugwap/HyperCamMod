@@ -96,8 +96,10 @@ public class MainActivity extends Activity {
 
         box.addView(body(
                 "Ikon hanya disembunyikan dari launcher. Modul tetap aktif dan tetap "
-                        + "muncul di daftar LSPosed Manager. Untuk membuka layar ini lagi "
-                        + "setelah ikon hilang, jalankan dari PC:\n\n"
+                        + "muncul di daftar LSPosed Manager — tombol buka/setelan di sana "
+                        + "tetap berfungsi karena memakai category khusus "
+                        + "(MODULE_SETTINGS).\n\n"
+                        + "Kalau perlu jalan lain, dari PC:\n\n"
                         + "adb shell am start -n com.ugwap.hypercammod/.MainActivity",
                 dp));
 

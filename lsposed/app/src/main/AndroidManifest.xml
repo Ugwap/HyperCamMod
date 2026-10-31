@@ -20,7 +20,17 @@
 
         <activity
             android:name=".MainActivity"
-            android:exported="true" />
+            android:exported="true">
+            <!--
+                LSPosed Manager membuka layar modul lewat ACTION_MAIN +
+                category MODULE_SETTINGS. Filter ini tidak membuat ikon
+                launcher, jadi tetap bisa dibuka walau ikon disembunyikan.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />
+            </intent-filter>
+        </activity>
 
         <!--
             Ikon launcher dipisah ke alias supaya bisa di-enable/disable dari

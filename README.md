@@ -9,7 +9,7 @@ skrip, template, dan dokumentasi. Tidak perlu re-sign APK kamera, jadi tidak ken
 pengecekan signature / `sharedUserId`.
 
 > Status: **jalan** di Poco X7 Pro (`2412DPC0AG` / `rodin`), HyperOS `4.0.0.12.XPTCNXM`
-> (V816), Android 17 (SDK 37), kamera **6.4.000250.3**. Versi modul: **1.2.0**.
+> (V816), Android 17 (SDK 37), kamera **6.4.000250.3**. Versi modul: **1.2.1**.
 > Detail & batasan versi ada di [Kompatibilitas](#kompatibilitas).
 
 ## Yang dilakukan modul
@@ -134,14 +134,17 @@ Catatan:
 
 - Ini tidak menyembunyikan aplikasi dari **LSPosed Manager** atau **Settings → Apps**;
   keduanya tetap menampilkan HyperCamMod.
-- Kalau ikon sudah hilang dan kamu perlu membuka layarnya lagi:
+- Saat ikon disembunyikan, layar modul tetap bisa dibuka dari **LSPosed Manager**
+  (tombol buka/setelan di kartu modul). Itu jalan karena `MainActivity` mendaftarkan
+  category `de.robv.android.xposed.category.MODULE_SETTINGS`, bukan lewat ikon launcher.
+- Cadangan kalau perlu jalan lain:
 
   ```powershell
   adb shell am start -n com.ugwap.hypercammod/.MainActivity
   ```
 
-  Atau lewat Settings → Apps → HyperCamMod (kalau tombol *Open* tersedia), lalu
-  matikan switch-nya.
+- Tombol *Open* di Settings → Apps **tidak muncul** selama ikon disembunyikan (tidak
+  ada launcher intent). Pakai LSPosed Manager atau perintah adb di atas.
 - Menghapus modul tetap bisa dari LSPosed Manager atau
   `adb uninstall com.ugwap.hypercammod`.
 
