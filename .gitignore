@@ -1,0 +1,20 @@
+# APK & resource proprietary tidak boleh masuk repo
+*.apk
+*.apk.*
+*.zip
+*.jar
+
+# Hasil kerja lokal
+stock/
+decoded/
+build/
+keys/
+dist/
+tools/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
