@@ -20,12 +20,25 @@
 
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true" />
+
+        <!--
+            Ikon launcher dipisah ke alias supaya bisa di-enable/disable dari
+            MainActivity tanpa mematikan modul. Kalau alias di-disable, ikon
+            hilang dari home screen tapi LSPosed tetap memuat modul.
+        -->
+        <activity-alias
+            android:name=".Launcher"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@android:drawable/ic_menu_camera"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
     </application>
 
 </manifest>

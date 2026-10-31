@@ -1,8 +1,11 @@
 package com.ugwap.hypercammod;
 
 import android.app.Activity;
+import android.content.ComponentName;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.os.Bundle;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -10,14 +13,22 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
 /**
- * Layar informasi sederhana. Modul ini tidak punya setting;
- * semua efek dijalankan oleh HookEntry di proses kamera.
+ * Layar informasi + satu pengaturan: sembunyikan ikon dari home screen.
+ * Semua efek kamera dijalankan oleh HookEntry di proses com.android.camera.
  */
 public class MainActivity extends Activity {
+
+    /** Nama activity-alias yang memegang intent LAUNCHER di manifest. */
+    private static final String LAUNCHER_ALIAS = "com.ugwap.hypercammod.Launcher";
+
+    private Switch hideSwitch;
+    /** Mencegah listener terpanggil saat mengembalikan posisi switch. */
+    private boolean suppressListener;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -37,20 +48,20 @@ public class MainActivity extends Activity {
         title.setText("HyperCamMod");
         title.setTextColor(Color.WHITE);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26);
-        title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
+        title.setTypeface(title.getTypeface(), Typeface.BOLD);
         box.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Scrim gradient ala iOS untuk kamera HyperOS");
+        subtitle.setText("Preview full-screen + scrim untuk kamera HyperOS");
         subtitle.setTextColor(0xFFFFB300);
         subtitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         subtitle.setPadding(0, Math.round(4 * dp), 0, pad);
         box.addView(subtitle);
 
         box.addView(body(
-                "Modul ini menambah gradient hitam di area atas dan bawah kamera bawaan "
-                        + "(com.android.camera) serta membuat background top bar transparan. "
-                        + "Logika kamera, foto, dan video tidak diubah.",
+                "Modul ini membuat preview kamera bawaan (com.android.camera) menutup "
+                        + "seluruh layar dan menambahkan scrim gradient hitam 50% di area "
+                        + "atas/bawah. Logika foto dan video tidak diubah.",
                 dp));
 
         box.addView(header("Cara mengaktifkan", dp));
@@ -68,6 +79,26 @@ public class MainActivity extends Activity {
         box.addView(body(
                 "Pastikan LSPosed (Zygisk) aktif dan modul ini tidak dalam keadaan mati. "
                         + "Cek log LSPosed dengan filter tag \"HyperCamMod\" untuk melihat pesan hook.",
+                dp));
+
+        box.addView(header("Ikon aplikasi", dp));
+
+        hideSwitch = new Switch(this);
+        hideSwitch.setText("Sembunyikan ikon dari home screen");
+        hideSwitch.setTextColor(Color.WHITE);
+        hideSwitch.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        hideSwitch.setPadding(0, Math.round(8 * dp), 0, Math.round(4 * dp));
+        hideSwitch.setChecked(isLauncherHidden());
+        hideSwitch.setOnCheckedChangeListener((view, checked) -> {
+            if (!suppressListener) setLauncherHidden(checked);
+        });
+        box.addView(hideSwitch);
+
+        box.addView(body(
+                "Ikon hanya disembunyikan dari launcher. Modul tetap aktif dan tetap "
+                        + "muncul di daftar LSPosed Manager. Untuk membuka layar ini lagi "
+                        + "setelah ikon hilang, jalankan dari PC:\n\n"
+                        + "adb shell am start -n com.ugwap.hypercammod/.MainActivity",
                 dp));
 
         Button open = new Button(this);
@@ -99,12 +130,45 @@ public class MainActivity extends Activity {
         setContentView(scroll);
     }
 
+    private ComponentName launcherAlias() {
+        return new ComponentName(this, LAUNCHER_ALIAS);
+    }
+
+    private boolean isLauncherHidden() {
+        int state = getPackageManager().getComponentEnabledSetting(launcherAlias());
+        return state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
+                || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED;
+    }
+
+    private void setLauncherHidden(boolean hidden) {
+        try {
+            getPackageManager().setComponentEnabledSetting(
+                    launcherAlias(),
+                    hidden
+                            ? PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                            : PackageManager.COMPONENT_ENABLED_STATE_DEFAULT,
+                    PackageManager.DONT_KILL_APP);
+            Toast.makeText(
+                    this,
+                    hidden
+                            ? "Ikon disembunyikan dari home screen"
+                            : "Ikon ditampilkan lagi di home screen",
+                    Toast.LENGTH_SHORT).show();
+        } catch (Throwable t) {
+            Toast.makeText(this, "Gagal mengubah ikon: " + t, Toast.LENGTH_LONG).show();
+            suppressListener = true;
+            hideSwitch.setChecked(!hidden);
+            suppressListener = false;
+        }
+    }
+
     private TextView header(String text, float dp) {
         TextView view = new TextView(this);
         view.setText(text);
         view.setTextColor(Color.WHITE);
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17);
-        view.setTypeface(view.getTypeface(), android.graphics.Typeface.BOLD);
+        view.setTypeface(view.getTypeface(), Typeface.BOLD);
         view.setPadding(0, Math.round(20 * dp), 0, Math.round(6 * dp));
         return view;
     }
