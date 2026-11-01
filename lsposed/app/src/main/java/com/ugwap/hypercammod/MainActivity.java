@@ -38,7 +38,6 @@ public class MainActivity extends Activity {
     private static final String PREFS_NAME = "hypercammod";
     private static final String KEY_ZOOM_MODE = "zoom_mode";
     private static final String KEY_SCRIM = "scrim_level";
-    private static final String KEY_ZOOM_BG = "zoom_bg";
     private static final String KEY_CORNER = "corner_radius";
 
     private SharedPreferences prefs;
@@ -72,7 +71,7 @@ public class MainActivity extends Activity {
         box.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Preview kamera HyperOS: zoom, scrim, latar & sudut bisa diatur");
+        subtitle.setText("Preview kamera HyperOS: zoom, scrim & sudut bisa diatur");
         subtitle.setTextColor(0xFFFFB300);
         subtitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         subtitle.setPadding(0, Math.round(4 * dp), 0, pad);
@@ -80,7 +79,7 @@ public class MainActivity extends Activity {
 
         box.addView(body(
                 "Modul ini mengatur preview kamera bawaan (com.android.camera): "
-                        + "seberapa besar preview di-zoom, seberapa gelap scrim/latar, "
+                        + "seberapa besar preview di-zoom, seberapa gelap scrim, "
                         + "dan apakah sudut preview membulat. Logika foto dan video "
                         + "tidak diubah.",
                 dp));
@@ -103,16 +102,6 @@ public class MainActivity extends Activity {
                 new String[]{"Mati", "25%", "50%"},
                 new int[]{0, 25, 50},
                 KEY_SCRIM, 0));
-
-        box.addView(body("Latar hitam saat zoom", dp));
-        box.addView(radioGroup(dp,
-                new String[]{
-                        "Mati",
-                        "30% - muncul hanya saat preview di-zoom",
-                        "40% - muncul hanya saat preview di-zoom"
-                },
-                new int[]{0, 30, 40},
-                KEY_ZOOM_BG, 0));
 
         box.addView(body("Sudut preview", dp));
         box.addView(radioGroup(dp,

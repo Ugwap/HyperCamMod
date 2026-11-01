@@ -61,8 +61,6 @@ public class HookEntry implements IXposedHookLoadPackage {
     private static final int DEFAULT_ZOOM_MODE = ConfigReceiver.DEFAULT_ZOOM_MODE;
     /** Default tanpa scrim supaya preview tidak terasa berkabut. */
     private static final int DEFAULT_SCRIM = ConfigReceiver.DEFAULT_SCRIM;
-    /** Default tanpa latar tambahan saat zoom. */
-    private static final int DEFAULT_ZOOM_BG = ConfigReceiver.DEFAULT_ZOOM_BG;
     /** Default sudut kotak (tanpa pembulatan). */
     private static final int DEFAULT_CORNER = ConfigReceiver.DEFAULT_CORNER;
 
@@ -71,7 +69,6 @@ public class HookEntry implements IXposedHookLoadPackage {
     private static boolean sRequestInFlight;
     private static int sLastZoomMode = -1;
     private static int sLastScrim = -1;
-    private static int sLastZoomBg = -1;
     private static int sLastCorner = -1;
     private static boolean sQueryFailed;
 
@@ -266,23 +263,16 @@ public class HookEntry implements IXposedHookLoadPackage {
             FrameLayout container = (FrameLayout) root;
 
             int scrim = scrimLevel();
-            // "Latar hitam saat zoom" hanya dipakai ketika preview sedang penuh
-            // (mode Otomatis yang sudah di-zoom, atau mode 100%). Kalau scrim biasa
-            // lebih tinggi, scrim itu yang dipakai (tidak ditumpuk).
-            boolean zoomBg = previewFilled() && zoomBgLevel() > scrim;
-            if (zoomBg) {
-                scrim = zoomBgLevel();
-            }
             if (scrim <= 0) {
                 removeScrims(container);
-            } else if (!hasScrims(container, scrim, zoomBg)) {
+            } else if (!hasScrims(container, scrim)) {
                 boolean landscape = res.getConfiguration().orientation
                         == Configuration.ORIENTATION_LANDSCAPE;
 
                 removeScrims(container);
 
-                View top = makeScrim(activity, true, res, landscape, scrim, zoomBg);
-                View bottom = makeScrim(activity, false, res, landscape, scrim, zoomBg);
+                View top = makeScrim(activity, true, res, landscape, scrim);
+                View bottom = makeScrim(activity, false, res, landscape, scrim);
 
                 int index = childIndexById(container, ids[ID_LOWER]);
                 if (index < 0) index = Math.min(1, container.getChildCount());
@@ -290,8 +280,7 @@ public class HookEntry implements IXposedHookLoadPackage {
                 container.addView(top, index, params(res, true, landscape));
                 container.addView(bottom, index + 1, params(res, false, landscape));
 
-                XposedBridge.log(LOG + ": scrim " + scrim + "% dipasang"
-                        + (zoomBg ? " (latar zoom)" : ""));
+                XposedBridge.log(LOG + ": scrim " + scrim + "% dipasang");
             }
 
             clearCovers(decor);
@@ -487,23 +476,18 @@ public class HookEntry implements IXposedHookLoadPackage {
     }
 
     private static View makeScrim(Activity activity, boolean top, Resources res,
-                                  boolean landscape, int level, boolean zoomStyle) {
-        // level = persen alpha hitam (0/25/30/40/50).
+                                  boolean landscape, int level) {
+        // level = persen alpha hitam (0/25/50).
         int alpha = Math.round(255f * level / 100f);
         int scrim = (alpha << 24);
         int[] colors = top
                 ? new int[]{scrim, scrim, 0x00000000}
                 : new int[]{0x00000000, scrim, scrim};
-        // Gaya "latar zoom" dibuat lebih lembut: bagian gelapnya menempel di tepi
-        // layar lalu cepat memudar, supaya tidak terlihat seperti bar yang dipotong.
-        float[] stops;
-        if (zoomStyle) {
-            stops = top ? new float[]{0f, 0.22f, 1f} : new float[]{0f, 0.28f, 1f};
-        } else {
-            stops = top ? new float[]{0f, 0.55f, 1f} : new float[]{0f, 0.45f, 1f};
-        }
+        float[] stops = top
+                ? new float[]{0f, 0.55f, 1f}
+                : new float[]{0f, 0.45f, 1f};
 
-        ScrimView view = new ScrimView(activity, colors, stops, level, zoomStyle);
+        ScrimView view = new ScrimView(activity, colors, stops, level);
         view.setTag(top ? TAG_TOP : TAG_BOTTOM);
         view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         view.setClickable(false);
@@ -517,14 +501,12 @@ public class HookEntry implements IXposedHookLoadPackage {
         private final int[] colors;
         private final float[] stops;
         final int level;
-        final boolean zoomStyle;
 
-        ScrimView(Context context, int[] colors, float[] stops, int level, boolean zoomStyle) {
+        ScrimView(Context context, int[] colors, float[] stops, int level) {
             super(context);
             this.colors = colors;
             this.stops = stops;
             this.level = level;
-            this.zoomStyle = zoomStyle;
             setWillNotDraw(false);
         }
 
@@ -578,14 +560,13 @@ public class HookEntry implements IXposedHookLoadPackage {
     }
 
     /** Cek langsung tipe ScrimView di child teratas (lebih andal daripada tag lookup). */
-    private static boolean hasScrims(ViewGroup parent, int level, boolean zoomStyle) {
+    private static boolean hasScrims(ViewGroup parent, int level) {
         boolean top = false;
         boolean bottom = false;
         for (int i = 0; i < parent.getChildCount(); i++) {
             View child = parent.getChildAt(i);
             if (!(child instanceof ScrimView)) continue;
-            ScrimView scrim = (ScrimView) child;
-            if (scrim.level != level || scrim.zoomStyle != zoomStyle) return false;
+            if (((ScrimView) child).level != level) return false;
             if (TAG_TOP.equals(child.getTag())) top = true;
             if (TAG_BOTTOM.equals(child.getTag())) bottom = true;
         }
@@ -649,11 +630,9 @@ public class HookEntry implements IXposedHookLoadPackage {
 
                     int zoom = extras.getInt(ConfigReceiver.KEY_ZOOM_MODE, DEFAULT_ZOOM_MODE);
                     int scrim = extras.getInt(ConfigReceiver.KEY_SCRIM, DEFAULT_SCRIM);
-                    int zoomBg = extras.getInt(ConfigReceiver.KEY_ZOOM_BG, DEFAULT_ZOOM_BG);
                     int corner = extras.getInt(ConfigReceiver.KEY_CORNER, DEFAULT_CORNER);
                     zoom = zoom < 0 ? 0 : Math.min(zoom, MODE_AUTO);
                     scrim = scrim <= 0 ? 0 : Math.min(scrim, 50);
-                    zoomBg = zoomBg <= 0 ? 0 : Math.min(zoomBg, 60);
                     corner = corner <= 0 ? 0 : Math.min(corner, 60);
 
                     if (sQueryFailed) {
@@ -662,13 +641,12 @@ public class HookEntry implements IXposedHookLoadPackage {
                     }
 
                     if (zoom != sLastZoomMode || scrim != sLastScrim
-                            || zoomBg != sLastZoomBg || corner != sLastCorner) {
+                            || corner != sLastCorner) {
                         sLastZoomMode = zoom;
                         sLastScrim = scrim;
-                        sLastZoomBg = zoomBg;
                         sLastCorner = corner;
                         XposedBridge.log(LOG + ": config zoom=" + zoom + " scrim=" + scrim
-                                + "% zoombg=" + zoomBg + "% sudut=" + corner + "dp");
+                                + "% sudut=" + corner + "dp");
                         reapplyLast();
                     }
                 }
@@ -709,20 +687,8 @@ public class HookEntry implements IXposedHookLoadPackage {
         return sLastScrim < 0 ? DEFAULT_SCRIM : sLastScrim;
     }
 
-    private static int zoomBgLevel() {
-        return sLastZoomBg < 0 ? DEFAULT_ZOOM_BG : sLastZoomBg;
-    }
-
     private static int cornerDp() {
         return sLastCorner < 0 ? DEFAULT_CORNER : sLastCorner;
-    }
-
-    /** True kalau preview sedang memenuhi layar (bar hitam hilang). */
-    private static boolean previewFilled() {
-        int mode = zoomMode();
-        if (mode == 2) return true;          // 100% = selalu penuh
-        if (mode == MODE_AUTO) return autoFill();
-        return false;
     }
 
     /**

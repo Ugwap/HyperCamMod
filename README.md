@@ -1,7 +1,7 @@
-# HyperCamMod
+﻿# HyperCamMod
 
 Modul **LSPosed** untuk membuat tampilan aplikasi kamera bawaan HyperOS
-(`com.android.camera` / MiuiCamera) jadi **full-screen** — bar hitam di atas/bawah
+(`com.android.camera` / MiuiCamera) jadi **full-screen** â€” bar hitam di atas/bawah
 hilang, preview menutup seluruh layar, dan ikon atas/bawah tetap terbaca.
 
 Repo ini **tidak menyimpan APK proprietary Xiaomi**. Yang disimpan hanya source modul,
@@ -9,41 +9,35 @@ skrip, template, dan dokumentasi. Tidak perlu re-sign APK kamera, jadi tidak ken
 pengecekan signature / `sharedUserId`.
 
 > Status: **jalan** di Poco X7 Pro (`2412DPC0AG` / `rodin`), HyperOS `4.0.0.12.XPTCNXM`
-> (V816), Android 17 (SDK 37), kamera **6.4.000250.3**. Versi modul: **1.5.0**.
+> (V816), Android 17 (SDK 37), kamera **6.4.000250.3**. Versi modul: **1.5.1**.
 > Detail & batasan versi ada di [Kompatibilitas](#kompatibilitas).
 
 ## Yang dilakukan modul
 
-1. **Preview 4:3 dinamis** — SurfaceView preview 4:3 bisa dibesarkan (`scale = 1 +
+1. **Preview 4:3 dinamis** â€” SurfaceView preview 4:3 bisa dibesarkan (`scale = 1 +
    (tinggi layar / tinggi konten - 1) x porsi`) dengan pivot di tengah area konten.
    Pilihan:
-   - **Otomatis** (default) — di 0,6x / 1x bar hitam atas-bawah tetap ada; begitu
-     preview di-zoom (≥ ~1,2x) preview memenuhi layar dan bar hilang. Perpindahannya
+   - **Otomatis** (default) â€” di 0,6x / 1x bar hitam atas-bawah tetap ada; begitu
+     preview di-zoom (â‰¥ ~1,2x) preview memenuhi layar dan bar hilang. Perpindahannya
      **dianimasikan ~220 ms** (decelerate) supaya tidak terlihat "patah", dan ada
      histeresis: kembali ke 4:3 saat zoom turun di bawah **1,02x** agar tidak berkedip
      di batas ambang.
-   - **Mati** — selalu 4:3 asli dengan bar.
-   - **50%** — bar tertutup separuh, selalu.
-   - **100%** — penuh layar, selalu.
-2. **Scrim gradient yang bisa diatur** — lapisan gelap di area atas (200dp) dan bawah
+   - **Mati** â€” selalu 4:3 asli dengan bar.
+   - **50%** â€” bar tertutup separuh, selalu.
+   - **100%** â€” penuh layar, selalu.
+2. **Scrim gradient yang bisa diatur** â€” lapisan gelap di area atas (200dp) dan bawah
    (320dp) supaya ikon/shutter tetap kontras. Level: **Mati** (default), **25%**, atau
-   **50%**. Tanpa blur/PixelCopy — ringan, tidak membaca frame.
-3. **Latar hitam saat zoom** — gradient hitam **30%** atau **40%** di area atas/bawah
-   yang hanya muncul ketika preview sedang penuh (Otomatis yang sudah di-zoom, atau
-   mode 100%), jadi ikon tetap terbaca tanpa menggelapkan preview di 0,6x/1x. Default
-   **Mati**. Gradiennya dibuat lebih lembut dari scrim biasa (gelap menempel di tepi,
-   cepat memudar) supaya tidak terlihat seperti bar yang dipotong. Kalau scrim biasa
-   juga aktif, dipakai level yang lebih tinggi (tidak ditumpuk).
-4. **Sudut preview membulat** — `SurfaceView.setCornerRadius` milik sistem dipakai
+   **50%**. Tanpa blur/PixelCopy â€” ringan, tidak membaca frame.
+3. **Sudut preview membulat** â€” `SurfaceView.setCornerRadius` milik sistem dipakai
    untuk membulatkan sudut preview (sekaligus lubang view-nya), jadi tetap rapi saat
    preview di-scale. Pilihan **Mati** (default), **20 dp**, **40 dp**.
-5. **Lapisan hitam bawaan dimatikan** — `top_cover_layout`, `bottom_cover_layout`,
+4. **Lapisan hitam bawaan dimatikan** â€” `top_cover_layout`, `bottom_cover_layout`,
    `left/right_cover_layout`, `mask_cover_layout`, `top_config_background`, dst.
    di-set alpha 0 agar tidak menutupi preview.
-6. **Top bar & status bar transparan** supaya preview terlihat menyatu di belakang ikon.
+5. **Top bar & status bar transparan** supaya preview terlihat menyatu di belakang ikon.
 
-7. **Opsi sembunyikan ikon** aplikasi modul dari home screen. Modul tetap aktif dan
-   tetap terdaftar di LSPosed Manager — hanya shortcut-nya yang hilang.
+6. **Opsi sembunyikan ikon** aplikasi modul dari home screen. Modul tetap aktif dan
+   tetap terdaftar di LSPosed Manager â€” hanya shortcut-nya yang hilang.
 
 Tidak menyentuh capture, video, atau Pro mode (hanya tampilan preview).
 
@@ -62,9 +56,9 @@ tetap ada) dan alasannya dicatat di log.
 
 ### Trade-off
 
-Semakin besar zoom, semakin banyak viewfinder ter-crop di kiri–kanan dibanding hasil
-foto 4:3 (zoom 100% ≈ 40% ter-crop). Hasil foto/video tetap normal (tidak di-crop).
-Ini konsekuensi dari mengisi layar 20:9 dengan sensor 4:3 — karena itu zoom dibuat
+Semakin besar zoom, semakin banyak viewfinder ter-crop di kiriâ€“kanan dibanding hasil
+foto 4:3 (zoom 100% â‰ˆ 40% ter-crop). Hasil foto/video tetap normal (tidak di-crop).
+Ini konsekuensi dari mengisi layar 20:9 dengan sensor 4:3 â€” karena itu zoom dibuat
 bisa dimatikan.
 
 ## Kompatibilitas
@@ -92,7 +86,7 @@ internal di APK kamera.
 | id `camera_app_root` | menempelkan scrim | scrim tidak dipasang |
 | id `preview_surface_layout` + `gl_root_cover` | hitung skala crop preview | zoom dilewati, tampilan asli |
 | id `top_config_background` | memudarkan top bar | top bar tetap solid |
-| class `com.android.camera.ui.ShapeBackGroundView` method `d()` | top bar transparan (paint) | hanya efek ini hilang — bagian paling rapuh karena nama method di-obfuscate |
+| class `com.android.camera.ui.ShapeBackGroundView` method `d()` | top bar transparan (paint) | hanya efek ini hilang â€” bagian paling rapuh karena nama method di-obfuscate |
 | class `X5.f` (ZoomManager) method `setZoomRatio(F)` / `e0(FI)` / `n0()` | tahu level zoom untuk mode Otomatis | mode Otomatis jadi 4:3 (bar selalu ada) |
 | `SurfaceView` di dalam `preview_surface_layout` | objek yang di-zoom | zoom dilewati |
 | `SurfaceView.setCornerRadius(float)` (hidden API) | sudut preview membulat | sudut tetap kotak, dicatat di log |
@@ -104,9 +98,9 @@ tetap jalan seperti asli (paling banter efek full-screen-nya tidak muncul).
 
 | Versi kamera / ROM | Status |
 | --- | --- |
-| MiuiCamera 6.x — HyperOS 2/3/4 | kemungkinan jalan (generasi yang diuji) |
-| MiuiCamera 5.x — HyperOS 1 | belum diuji; crop kemungkinan jalan, top bar bisa tidak |
-| MiuiCamera 4.x — MIUI 14 ke bawah | kemungkinan tidak (struktur layout beda generasi) |
+| MiuiCamera 6.x â€” HyperOS 2/3/4 | kemungkinan jalan (generasi yang diuji) |
+| MiuiCamera 5.x â€” HyperOS 1 | belum diuji; crop kemungkinan jalan, top bar bisa tidak |
+| MiuiCamera 4.x â€” MIUI 14 ke bawah | kemungkinan tidak (struktur layout beda generasi) |
 | Foldable/tablet yang preview-nya sudah full-screen | scrim tetap dipasang, zoom otomatis dilewati |
 | Kamera non-Xiaomi (AOSP/GCam) | tidak didukung (package berbeda) |
 
@@ -124,7 +118,7 @@ Tiga baris penanda sukses (contoh mode Otomatis + scrim mati):
 HyperCamMod: aktif di com.android.camera
 HyperCamMod: hook ShapeBackGroundView.d() terpasang
 HyperCamMod: hook ZoomManager.setZoomRatio terpasang
-HyperCamMod: config zoom=3 scrim=0% zoombg=0% sudut=0dp
+HyperCamMod: config zoom=3 scrim=0% sudut=0dp
 ```
 
 Saat zoom melewati ambang, muncul salah satu:
@@ -140,8 +134,8 @@ dan sudut tetap kotak (tidak ada efek samping lain).
 
 Kalau `hook ShapeBackGroundView.d()` gagal, hanya efek top bar transparan yang hilang.
 Kalau `hook ZoomManager.setZoomRatio` gagal, mode Otomatis berperilaku seperti 4:3
-(bar selalu ada) — pilih mode 50%/100% kalau tetap ingin full-screen.
-Kalau baris `config ...` tidak muncul, pengaturan modul belum terbaca — hook memakai
+(bar selalu ada) â€” pilih mode 50%/100% kalau tetap ingin full-screen.
+Kalau baris `config ...` tidak muncul, pengaturan modul belum terbaca â€” hook memakai
 nilai default. Kalau `scrim 25% dipasang` tidak muncul padahal scrim diset 25%, berarti
 id resource di ROM itu berbeda dan daftar id perlu ditambah.
 
@@ -167,7 +161,7 @@ Cek log kalau tidak berubah:
 adb logcat -s LSPosedFramework | Select-String "HyperCamMod"
 ```
 
-`local.properties` (path SDK) tidak ikut di-commit — buat sendiri kalau perlu:
+`local.properties` (path SDK) tidak ikut di-commit â€” buat sendiri kalau perlu:
 
 ```
 sdk.dir=C\:\\Users\\<nama>\\AppData\\Local\\Android\\Sdk
@@ -175,14 +169,13 @@ sdk.dir=C\:\\Users\\<nama>\\AppData\\Local\\Android\\Sdk
 
 ### Pengaturan tampilan
 
-Buka aplikasi **HyperCamMod** (atau dari LSPosed Manager) → bagian
+Buka aplikasi **HyperCamMod** (atau dari LSPosed Manager) â†’ bagian
 **Tampilan preview**:
 
 | Pengaturan | Pilihan | Default |
 | --- | --- | --- |
 | Zoom preview | Otomatis (bar hilang saat di-zoom) / Mati (4:3 asli) / 50% / 100% | Otomatis |
 | Scrim gradient atas-bawah | Mati / 25% / 50% | Mati (tanpa kabut) |
-| Latar hitam saat zoom | Mati / 30% / 40% (hanya saat preview penuh) | Mati |
 | Sudut preview | Mati / 20 dp / 40 dp | Mati (kotak) |
 
 Perubahan disimpan saat itu juga, tapi **berlaku setelah kamera dibuka ulang**
@@ -196,13 +189,13 @@ package visibility (`not found`).
 
 ### Sembunyikan ikon modul
 
-Buka aplikasi **HyperCamMod** → bagian *Ikon aplikasi* → aktifkan
+Buka aplikasi **HyperCamMod** â†’ bagian *Ikon aplikasi* â†’ aktifkan
 **Sembunyikan ikon dari home screen**. Ikon langsung hilang dari launcher, tapi modul
 tetap jalan karena hook ada di proses kamera.
 
 Catatan:
 
-- Ini tidak menyembunyikan aplikasi dari **LSPosed Manager** atau **Settings → Apps**;
+- Ini tidak menyembunyikan aplikasi dari **LSPosed Manager** atau **Settings â†’ Apps**;
   keduanya tetap menampilkan HyperCamMod.
 - Saat ikon disembunyikan, layar modul tetap bisa dibuka dari **LSPosed Manager**
   (tombol buka/setelan di kartu modul). Itu jalan karena `MainActivity` mendaftarkan
@@ -213,7 +206,7 @@ Catatan:
   adb shell am start -n com.ugwap.hypercammod/.MainActivity
   ```
 
-- Tombol *Open* di Settings → Apps **tidak muncul** selama ikon disembunyikan (tidak
+- Tombol *Open* di Settings â†’ Apps **tidak muncul** selama ikon disembunyikan (tidak
   ada launcher intent). Pakai LSPosed Manager atau perintah adb di atas.
 - Menghapus modul tetap bisa dari LSPosed Manager atau
   `adb uninstall com.ugwap.hypercammod`.
@@ -263,7 +256,7 @@ powershell -ExecutionPolicy Bypass -File scripts\make-module.ps1
 
 Modul Magisk bisa dinonaktifkan/dihapus kapan saja (lihat [docs/REVERT.md](docs/REVERT.md)).
 Kalau kamera memakai `sharedUserId` sistem atau pengecekan signature, APK mod **tidak
-akan jalan** — itulah kenapa jalur LSPosed yang dipakai.
+akan jalan** â€” itulah kenapa jalur LSPosed yang dipakai.
 
 ## Peringatan
 
@@ -271,12 +264,13 @@ akan jalan** — itulah kenapa jalur LSPosed yang dipakai.
   dengan update HyperOS. Selalu punya cara disable modul dari LSPosed Manager.
 - Jangan commit APK, resource hasil decode, atau keystore ke repo publik.
 - Setiap update HyperOS, id resource bisa berubah. `HookEntry.java` membaca id lewat
-  `Resources.getIdentifier`, jadi tidak hardcode — tapi kalau struktur view berubah,
+  `Resources.getIdentifier`, jadi tidak hardcode â€” tapi kalau struktur view berubah,
   perlu penyesuaian.
 - Diuji hanya pada konfigurasi di bagian [Kompatibilitas](#kompatibilitas). Versi
   kamera/ROM lain belum diverifikasi.
 
 ## Lisensi
 
-MIT — hanya untuk source modul, skrip, dan dokumentasi. Aplikasi kamera HyperOS tetap
+MIT â€” hanya untuk source modul, skrip, dan dokumentasi. Aplikasi kamera HyperOS tetap
 milik Xiaomi.
+
