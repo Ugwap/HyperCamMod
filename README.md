@@ -9,15 +9,19 @@ skrip, template, dan dokumentasi. Tidak perlu re-sign APK kamera, jadi tidak ken
 pengecekan signature / `sharedUserId`.
 
 > Status: **jalan** di Poco X7 Pro (`2412DPC0AG` / `rodin`), HyperOS `4.0.0.12.XPTCNXM`
-> (V816), Android 17 (SDK 37), kamera **6.4.000250.3**. Versi modul: **1.3.0**.
+> (V816), Android 17 (SDK 37), kamera **6.4.000250.3**. Versi modul: **1.4.0**.
 > Detail & batasan versi ada di [Kompatibilitas](#kompatibilitas).
 
 ## Yang dilakukan modul
 
-1. **Preview center-crop yang bisa diatur** — SurfaceView preview 4:3 diperbesar
-   (`scale = 1 + (tinggi layar / tinggi konten - 1) x porsi`) dengan pivot di tengah
-   area konten. Porsi zoom: **Mati** (4:3 asli), **50%** (default), atau **100%**
-   (penuh layar). Bar hitam atas/bawah ikut hilang sesuai porsi.
+1. **Preview 4:3 dinamis** — SurfaceView preview 4:3 bisa dibesarkan (`scale = 1 +
+   (tinggi layar / tinggi konten - 1) x porsi`) dengan pivot di tengah area konten.
+   Pilihan:
+   - **Otomatis** (default) — di 0,6x / 1x bar hitam atas-bawah tetap ada; begitu
+     preview di-zoom (≥ ~1,2x) preview memenuhi layar dan bar hilang.
+   - **Mati** — selalu 4:3 asli dengan bar.
+   - **50%** — bar tertutup separuh, selalu.
+   - **100%** — penuh layar, selalu.
 2. **Scrim gradient yang bisa diatur** — lapisan gelap di area atas (200dp) dan bawah
    (320dp) supaya ikon/shutter tetap kontras. Level: **Mati** (default), **25%**, atau
    **50%**. Tanpa blur/PixelCopy — ringan, tidak membaca frame.
@@ -30,6 +34,16 @@ pengecekan signature / `sharedUserId`.
    tetap terdaftar di LSPosed Manager — hanya shortcut-nya yang hilang.
 
 Tidak menyentuh capture, video, atau Pro mode (hanya tampilan preview).
+
+### Cara mode Otomatis tahu level zoom
+
+Modul membaca rasio zoom aktif dari `ZoomManager` kamera (`X5.f`, implementasi
+`W5.a`): hook `setZoomRatio(float)` dan `e0(float, int)` (update aksi zoom), lalu
+nilai terbaru diambil lewat getter `n0()`. Ambangnya **1,05x**: 0,6x dan 1x dianggap
+"belum zoom", 2x ke atas memicu layar penuh. Kalau hook ini gagal (nama class berubah
+di ROM lain), mode Otomatis jatuh ke perilaku 4:3 (bar tetap ada) dan alasannya
+dicatat di log.
+
 
 ### Trade-off
 
@@ -64,6 +78,7 @@ internal di APK kamera.
 | id `preview_surface_layout` + `gl_root_cover` | hitung skala crop preview | zoom dilewati, tampilan asli |
 | id `top_config_background` | memudarkan top bar | top bar tetap solid |
 | class `com.android.camera.ui.ShapeBackGroundView` method `d()` | top bar transparan (paint) | hanya efek ini hilang — bagian paling rapuh karena nama method di-obfuscate |
+| class `X5.f` (ZoomManager) method `setZoomRatio(F)` / `e0(FI)` / `n0()` | tahu level zoom untuk mode Otomatis | mode Otomatis jadi 4:3 (bar selalu ada) |
 | `SurfaceView` di dalam `preview_surface_layout` | objek yang di-zoom | zoom dilewati |
 
 Semua kegagalan di atas bersifat **no-op** dan dicatat di log, bukan crash: kamera
@@ -87,18 +102,28 @@ tetap jalan seperti asli (paling banter efek full-screen-nya tidak muncul).
 adb logcat -s LSPosedFramework | Select-String "HyperCamMod"
 ```
 
-Tiga baris penanda sukses (contoh untuk zoom 50% + scrim mati):
+Tiga baris penanda sukses (contoh mode Otomatis + scrim mati):
 
 ```
 HyperCamMod: aktif di com.android.camera
 HyperCamMod: hook ShapeBackGroundView.d() terpasang
-HyperCamMod: config zoom=1 scrim=0%
+HyperCamMod: hook ZoomManager.setZoomRatio terpasang
+HyperCamMod: config zoom=3 scrim=0%
+```
+
+Saat zoom melewati ambang, muncul salah satu:
+
+```
+HyperCamMod: auto zoom aktif (2.0x)
+HyperCamMod: auto zoom nonaktif (1.0x)
 ```
 
 Kalau `hook ShapeBackGroundView.d()` gagal, hanya efek top bar transparan yang hilang.
+Kalau `hook ZoomManager.setZoomRatio` gagal, mode Otomatis berperilaku seperti 4:3
+(bar selalu ada) — pilih mode 50%/100% kalau tetap ingin full-screen.
 Kalau baris `config ...` tidak muncul, pengaturan modul belum terbaca — hook memakai
-nilai default (zoom 50%, scrim mati). Kalau `scrim 25% dipasang` tidak muncul padahal
-scrim diset 25%, berarti id resource di ROM itu berbeda dan daftar id perlu ditambah.
+nilai default. Kalau `scrim 25% dipasang` tidak muncul padahal scrim diset 25%, berarti
+id resource di ROM itu berbeda dan daftar id perlu ditambah.
 
 ## Cara build & pasang
 
@@ -135,7 +160,7 @@ Buka aplikasi **HyperCamMod** (atau dari LSPosed Manager) → bagian
 
 | Pengaturan | Pilihan | Default |
 | --- | --- | --- |
-| Zoom preview | Mati (4:3 asli) / 50% / 100% (penuh layar) | 50% |
+| Zoom preview | Otomatis (bar hilang saat di-zoom) / Mati (4:3 asli) / 50% / 100% | Otomatis |
 | Scrim gradient atas-bawah | Mati / 25% / 50% | Mati (tanpa kabut) |
 
 Perubahan disimpan saat itu juga, tapi **berlaku setelah kamera dibuka ulang**

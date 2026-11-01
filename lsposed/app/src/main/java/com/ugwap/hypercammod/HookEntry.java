@@ -72,6 +72,14 @@ public class HookEntry implements IXposedHookLoadPackage {
     private static WeakReference<Activity> sLastActivity;
     private static WeakReference<View> sLastDecor;
 
+    /** Mode Otomatis: bar hitam hanya hilang saat preview benar-benar di-zoom. */
+    private static final int MODE_AUTO = 3;
+    /** Ambang zoom: 0.6x dan 1x masih dianggap "belum zoom". */
+    private static final float AUTO_ZOOM_THRESHOLD = 1.05f;
+
+    private static volatile float sZoomRatio = 1f;
+    private static WeakReference<Object> sZoomManager;
+
     private static final String TAG_TOP = "hcm_scrim_top";
     private static final String TAG_BOTTOM = "hcm_scrim_bottom";
 
@@ -103,7 +111,43 @@ public class HookEntry implements IXposedHookLoadPackage {
         XposedBridge.log(LOG + ": aktif di " + lpparam.packageName);
 
         hookShapeBackGroundView(lpparam.classLoader);
+        hookZoomManager(lpparam.classLoader);
         hookActivity(lpparam.classLoader);
+    }
+
+    // ------------------------------------------------------------------
+    // 0. Level zoom kamera (untuk mode Otomatis)
+    // ------------------------------------------------------------------
+
+    /**
+     * Ambil rasio zoom aktif dari ZoomManager kamera (X5.f = implementasi W5.a).
+     * Dipakai mode Otomatis: bar hitam hanya hilang saat rasio > 1 (mis. 2x),
+     * sedangkan di 0.6x / 1x preview tetap 4:3 dengan bar.
+     */
+    private void hookZoomManager(ClassLoader cl) {
+        try {
+            Class<?> zoomManager = XposedHelpers.findClass("X5.f", cl);
+
+            XposedHelpers.findAndHookMethod(zoomManager, "setZoomRatio", float.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            onZoomRatioChanged(param.thisObject, (Float) param.args[0]);
+                        }
+                    });
+
+            XposedHelpers.findAndHookMethod(zoomManager, "e0", float.class, int.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            onZoomRatioChanged(param.thisObject, (Float) param.args[0]);
+                        }
+                    });
+
+            XposedBridge.log(LOG + ": hook ZoomManager.setZoomRatio terpasang");
+        } catch (Throwable t) {
+            XposedBridge.log(LOG + ": hook zoom ratio gagal (mode Otomatis akan pakai 4:3): " + t);
+        }
     }
 
     // ------------------------------------------------------------------
@@ -255,7 +299,8 @@ public class HookEntry implements IXposedHookLoadPackage {
 
     /**
      * Perbesar preview 4:3 (center-crop) sesuai pengaturan zoom:
-     * 0 = tanpa zoom, 1 = setengah dari gap, 2 = penuh layar. Skala dihitung dari
+     * 0 = tanpa zoom, 1 = setengah dari gap, 2 = penuh layar, 3 = otomatis
+     * (penuh layar hanya saat rasio zoom kamera > 1,05x). Skala dihitung dari
      * tinggi area preview asli (bounds gl_root_cover) supaya benar untuk rasio lain.
      */
     private static void zoomPreview(View decor, int[] ids) {
@@ -290,13 +335,27 @@ public class HookEntry implements IXposedHookLoadPackage {
 
         int mode = zoomMode();
         float fillScale = h / contentHeight;
-        if (mode <= 0 || fillScale <= 1.001f) {
+        if (fillScale <= 1.001f) {
             resetZoom(surface);
             return;
         }
 
-        // 50% = separuh gap ditutup, jadi crop dan upscale-nya lebih ringan.
-        float fraction = mode == 1 ? 0.5f : 1f;
+        float fraction;
+        if (mode == MODE_AUTO) {
+            // Otomatis: bar hitam hanya hilang saat preview benar-benar di-zoom.
+            if (!autoFill()) {
+                resetZoom(surface);
+                return;
+            }
+            fraction = 1f;
+        } else if (mode <= 0) {
+            resetZoom(surface);
+            return;
+        } else {
+            // 50% = separuh gap ditutup, jadi crop dan upscale-nya lebih ringan.
+            fraction = mode == 1 ? 0.5f : 1f;
+        }
+
         float scale = 1f + (fillScale - 1f) * fraction;
         float contentCenterY = (contentTop + contentBottom) / 2f;
 
@@ -472,7 +531,7 @@ public class HookEntry implements IXposedHookLoadPackage {
 
                     int zoom = extras.getInt(ConfigReceiver.KEY_ZOOM_MODE, DEFAULT_ZOOM_MODE);
                     int scrim = extras.getInt(ConfigReceiver.KEY_SCRIM, DEFAULT_SCRIM);
-                    zoom = zoom < 0 ? 0 : Math.min(zoom, 2);
+                    zoom = zoom < 0 ? 0 : Math.min(zoom, MODE_AUTO);
                     scrim = scrim <= 0 ? 0 : Math.min(scrim, 50);
 
                     if (sQueryFailed) {
@@ -522,6 +581,47 @@ public class HookEntry implements IXposedHookLoadPackage {
 
     private static int scrimLevel() {
         return sLastScrim < 0 ? DEFAULT_SCRIM : sLastScrim;
+    }
+
+    /** Mode Otomatis: preview dianggap "sudah di-zoom" kalau rasio > 1.05x. */
+    private static boolean autoFill() {
+        Object manager = sZoomManager == null ? null : sZoomManager.get();
+        if (manager != null) {
+            try {
+                float ratio = (Float) XposedHelpers.callMethod(manager, "n0");
+                if (ratio > 0f && !Float.isNaN(ratio)) sZoomRatio = ratio;
+            } catch (Throwable ignored) {
+                // Pakai nilai cache kalau getter tidak tersedia.
+            }
+        }
+        return sZoomRatio > AUTO_ZOOM_THRESHOLD;
+    }
+
+    /** Dipanggil dari hook ZoomManager saat rasio zoom berubah. */
+    private static void onZoomRatioChanged(Object manager, Float ratio) {
+        if (manager != null) sZoomManager = new WeakReference<>(manager);
+
+        float value = ratio == null || Float.isNaN(ratio) ? 0f : ratio;
+        // Utamakan nilai yang benar-benar tersimpan di ZoomManager (bisa saja
+        // argumen hook masih nilai mentah sebelum di-clamp).
+        if (manager != null) {
+            try {
+                float committed = (Float) XposedHelpers.callMethod(manager, "n0");
+                if (committed > 0f && !Float.isNaN(committed)) value = committed;
+            } catch (Throwable ignored) {
+                // Getter tidak tersedia: pakai nilai dari argumen.
+            }
+        }
+        if (value <= 0f) return;
+
+        boolean wasFill = autoFill();
+        sZoomRatio = value;
+        boolean nowFill = sZoomRatio > AUTO_ZOOM_THRESHOLD;
+        if (wasFill == nowFill || zoomMode() != MODE_AUTO) return;
+
+        XposedBridge.log(LOG + ": auto zoom " + (nowFill ? "aktif" : "nonaktif")
+                + " (" + value + "x)");
+        reapplyLast();
     }
 
     private static int[] ids(Resources res) {

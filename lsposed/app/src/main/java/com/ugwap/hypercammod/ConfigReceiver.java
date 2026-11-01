@@ -28,7 +28,7 @@ public class ConfigReceiver extends BroadcastReceiver {
     public static final String PREFS_NAME = "hypercammod";
     public static final String KEY_ZOOM_MODE = "zoom_mode";   // 0=mati, 1=50%, 2=penuh
     public static final String KEY_SCRIM = "scrim_level";     // 0, 25, 50 (persen)
-    public static final int DEFAULT_ZOOM_MODE = 1;
+    public static final int DEFAULT_ZOOM_MODE = 3;  // 3 = Otomatis
     public static final int DEFAULT_SCRIM = 0;
 
     @Override

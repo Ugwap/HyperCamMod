@@ -87,12 +87,13 @@ public class MainActivity extends Activity {
         box.addView(body("Zoom preview", dp));
         box.addView(radioGroup(dp,
                 new String[]{
-                        "Mati - 4:3 asli, bar hitam kembali (paling tajam)",
-                        "50% - bar tertutup separuh (crop ringan)",
-                        "100% - penuh layar (crop paling banyak)"
+                        "Otomatis - bar hitam tetap ada di 0,6x/1x, hilang saat di-zoom",
+                        "Mati - 4:3 asli, bar hitam selalu ada (paling tajam)",
+                        "50% - bar tertutup separuh, selalu",
+                        "100% - penuh layar, selalu (crop paling banyak)"
                 },
-                new int[]{0, 1, 2},
-                KEY_ZOOM_MODE, 1));
+                new int[]{3, 0, 1, 2},
+                KEY_ZOOM_MODE, 3));
 
         box.addView(body("Scrim gradient atas/bawah", dp));
         box.addView(radioGroup(dp,
