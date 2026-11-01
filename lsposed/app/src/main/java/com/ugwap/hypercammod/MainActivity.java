@@ -39,6 +39,7 @@ public class MainActivity extends Activity {
     private static final String KEY_ZOOM_MODE = "zoom_mode";
     private static final String KEY_SCRIM = "scrim_level";
     private static final String KEY_CORNER = "corner_radius";
+    private static final String KEY_ZOOM_ANIM = "zoom_anim";
 
     private SharedPreferences prefs;
     private Switch hideSwitch;
@@ -112,6 +113,16 @@ public class MainActivity extends Activity {
                 },
                 new int[]{0, 20, 40},
                 KEY_CORNER, 0));
+
+        box.addView(body("Transisi zoom", dp));
+        box.addView(radioGroup(dp,
+                new String[]{
+                        "Bawaan - animasi kamera apa adanya (paling cepat)",
+                        "Halus - perpindahan zoom lebih pelan dan melambat di akhir",
+                        "Santai - paling pelan, cocok kalau bawaan terasa melompat"
+                },
+                new int[]{0, 1, 2},
+                KEY_ZOOM_ANIM, 1));
 
         box.addView(body(
                 "Perubahan berlaku setelah kamera dibuka ulang: force stop kamera "

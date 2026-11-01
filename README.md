@@ -9,7 +9,7 @@ skrip, template, dan dokumentasi. Tidak perlu re-sign APK kamera, jadi tidak ken
 pengecekan signature / `sharedUserId`.
 
 > Status: **jalan** di Poco X7 Pro (`2412DPC0AG` / `rodin`), HyperOS `4.0.0.12.XPTCNXM`
-> (V816), Android 17 (SDK 37), kamera **6.4.000250.3**. Versi modul: **1.5.1**.
+> (V816), Android 17 (SDK 37), kamera **6.4.000250.3**. Versi modul: **1.6.0**.
 > Detail & batasan versi ada di [Kompatibilitas](#kompatibilitas).
 
 ## Yang dilakukan modul
@@ -38,8 +38,32 @@ pengecekan signature / `sharedUserId`.
 
 6. **Opsi sembunyikan ikon** aplikasi modul dari home screen. Modul tetap aktif dan
    tetap terdaftar di LSPosed Manager â€” hanya shortcut-nya yang hilang.
+7. **Transisi zoom lebih halus** - animasi zoom bawaan kamera (tombol 0,6x/1x/2x dan
+   snap slider) memakai `LinearInterpolator` dengan durasi yang hampir sama dengan
+   selisih zoom-nya, bahkan 0 ms di beberapa kondisi, jadi terasa melompat. Modul
+   memperpanjang animator itu dan mengganti kurvanya menjadi *decelerate*:
+   **Bawaan** / **Halus** (default) / **Santai**.
 
 Tidak menyentuh capture, video, atau Pro mode (hanya tampilan preview).
+
+### Cara transisi zoom diperhalus
+
+Kamera membuat animator zoom di dua tempat, keduanya di-hook:
+
+| Target hook | Dipakai oleh |
+| --- | --- |
+| `Zb.g.i(float, float)` | `FragmentZoomToggle`, `FragmentZoomPanel`, `FragmentDualMenu` |
+| `FragmentZoomToggle.Yh(float, float)` | jalur animasi cadangan saat jalur utama tidak tersedia |
+
+Durasi asli animator dibaca (`getDuration()`), lalu diskalakan:
+
+- **Halus** - `durasi x 2,2`, dibatasi 220-460 ms, `DecelerateInterpolator(1.5)`
+- **Santai** - `durasi x 3,4`, dibatasi 320-700 ms
+- **Bawaan** - tidak diubah sama sekali
+
+Karena animator zoom kamera tetap yang dipakai (bukan animator baru buatan modul),
+setiap frame tetap memanggil jalur zoom resmi kamera. Kalau class target tidak ada di
+ROM lain, hook gagal dengan catatan di log dan zoom kembali ke perilaku bawaan.
 
 ### Cara mode Otomatis tahu level zoom
 
@@ -177,6 +201,7 @@ Buka aplikasi **HyperCamMod** (atau dari LSPosed Manager) â†’ bagian
 | Zoom preview | Otomatis (bar hilang saat di-zoom) / Mati (4:3 asli) / 50% / 100% | Otomatis |
 | Scrim gradient atas-bawah | Mati / 25% / 50% | Mati (tanpa kabut) |
 | Sudut preview | Mati / 20 dp / 40 dp | Mati (kotak) |
+| Transisi zoom | Bawaan / Halus / Santai | Halus |
 
 Perubahan disimpan saat itu juga, tapi **berlaku setelah kamera dibuka ulang**
 (force stop kamera atau tutup dari recents, lalu buka lagi).

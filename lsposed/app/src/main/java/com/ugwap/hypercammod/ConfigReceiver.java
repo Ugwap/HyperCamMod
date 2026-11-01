@@ -29,9 +29,11 @@ public class ConfigReceiver extends BroadcastReceiver {
     public static final String KEY_ZOOM_MODE = "zoom_mode";   // 0=mati, 1=50%, 2=penuh, 3=otomatis
     public static final String KEY_SCRIM = "scrim_level";     // 0, 25, 50 (persen)
     public static final String KEY_CORNER = "corner_radius";  // 0, 20, 40 (dp)
+    public static final String KEY_ZOOM_ANIM = "zoom_anim";   // 0=bawaan, 1=halus, 2=santai
     public static final int DEFAULT_ZOOM_MODE = 3;  // 3 = Otomatis
     public static final int DEFAULT_SCRIM = 0;
     public static final int DEFAULT_CORNER = 0;
+    public static final int DEFAULT_ZOOM_ANIM = 1;  // 1 = Halus
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -39,6 +41,7 @@ public class ConfigReceiver extends BroadcastReceiver {
         result.putInt(KEY_ZOOM_MODE, readZoomMode(context));
         result.putInt(KEY_SCRIM, readScrim(context));
         result.putInt(KEY_CORNER, readCorner(context));
+        result.putInt(KEY_ZOOM_ANIM, readZoomAnim(context));
 
         // Hanya berpengaruh kalau dipanggil lewat ordered broadcast.
         setResultCode(Activity.RESULT_OK);
@@ -59,5 +62,9 @@ public class ConfigReceiver extends BroadcastReceiver {
 
     public static int readCorner(Context context) {
         return prefs(context).getInt(KEY_CORNER, DEFAULT_CORNER);
+    }
+
+    public static int readZoomAnim(Context context) {
+        return prefs(context).getInt(KEY_ZOOM_ANIM, DEFAULT_ZOOM_ANIM);
     }
 }

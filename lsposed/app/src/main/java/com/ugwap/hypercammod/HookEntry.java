@@ -63,6 +63,8 @@ public class HookEntry implements IXposedHookLoadPackage {
     private static final int DEFAULT_SCRIM = ConfigReceiver.DEFAULT_SCRIM;
     /** Default sudut kotak (tanpa pembulatan). */
     private static final int DEFAULT_CORNER = ConfigReceiver.DEFAULT_CORNER;
+    /** Default transisi zoom halus. */
+    private static final int DEFAULT_ZOOM_ANIM = ConfigReceiver.DEFAULT_ZOOM_ANIM;
 
     private static long sPrefsCheckedAt;
     private static long sRetryAfter;
@@ -70,6 +72,8 @@ public class HookEntry implements IXposedHookLoadPackage {
     private static int sLastZoomMode = -1;
     private static int sLastScrim = -1;
     private static int sLastCorner = -1;
+    private static int sLastZoomAnim = -1;
+    private static long sLastZoomAnimLogAt;
     private static boolean sQueryFailed;
 
     /** Looper thread untuk menerima balasan ordered broadcast. */
@@ -122,7 +126,95 @@ public class HookEntry implements IXposedHookLoadPackage {
 
         hookShapeBackGroundView(lpparam.classLoader);
         hookZoomManager(lpparam.classLoader);
+        hookZoomAnimation(lpparam.classLoader);
         hookActivity(lpparam.classLoader);
+    }
+
+    // ------------------------------------------------------------------
+    // 0b. Transisi zoom (durasi animasi zoom kamera)
+    // ------------------------------------------------------------------
+
+    /**
+     * Kamera HyperOS menganimasikan perpindahan zoom (tombol 0,6x/1x/2x atau
+     * snap slider) dengan ValueAnimator ber-interpolator Linear dan durasi
+     * hampir sama dengan selisih zoom-nya - mis. 1x ke 2x hanya ~100 ms dan
+     * 0 ms kalau dianggap instan. Hasilnya terasa melompat.
+     *
+     * Hook di dua tempat pembuatan animator itu, lalu durasi dan kurvanya
+     * diganti supaya perpindahan zoom melambat di akhir:
+     * - Zb.g.i(float, float): dipakai FragmentZoomToggle / ZoomPanel / DualMenu.
+     * - FragmentZoomToggle.Yh(float, float): jalur animasi cadangan.
+     */
+    private void hookZoomAnimation(ClassLoader cl) {
+        try {
+            Class<?> helper = XposedHelpers.findClass("Zb.g", cl);
+            XposedHelpers.findAndHookMethod(helper, "i", float.class, float.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            Object result = param.getResult();
+                            if (result instanceof ValueAnimator) {
+                                smoothZoomAnim((ValueAnimator) result);
+                            }
+                        }
+                    });
+            XposedBridge.log(LOG + ": hook animasi zoom (Zb.g.i) terpasang");
+        } catch (Throwable t) {
+            XposedBridge.log(LOG + ": hook animasi zoom Zb.g.i gagal: " + t);
+        }
+
+        try {
+            Class<?> toggle = XposedHelpers.findClass(
+                    "com.android.camera.fragment.dual.FragmentZoomToggle", cl);
+            XposedHelpers.findAndHookMethod(toggle, "Yh", float.class, float.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            try {
+                                Object anim = XposedHelpers.getObjectField(param.thisObject, "f");
+                                if (anim instanceof ValueAnimator) {
+                                    smoothZoomAnim((ValueAnimator) anim);
+                                }
+                            } catch (Throwable ignored) {
+                                // Field animator tidak ada di versi ROM ini.
+                            }
+                        }
+                    });
+            XposedBridge.log(LOG + ": hook animasi zoom (FragmentZoomToggle.Yh) terpasang");
+        } catch (Throwable t) {
+            XposedBridge.log(LOG + ": hook animasi zoom Yh gagal: " + t);
+        }
+    }
+
+    /** Ubah durasi/kurva animator zoom sesuai pilihan di aplikasi modul. */
+    private static void smoothZoomAnim(ValueAnimator anim) {
+        int level = zoomAnimLevel();
+        if (level <= 0 || anim == null) return;
+
+        long base = anim.getDuration();
+        if (base < 0) base = 0;
+        // base == 0 berarti kamera ingin perpindahan instan; beri durasi minimum.
+        long duration;
+        if (level == 1) {
+            duration = clampDuration(Math.round(base * 2.2f), 220L, 460L);
+        } else {
+            duration = clampDuration(Math.round(base * 3.4f), 320L, 700L);
+        }
+
+        anim.setDuration(duration);
+        anim.setInterpolator(new DecelerateInterpolator(1.5f));
+        logZoomAnim(base, duration);
+    }
+
+    private static long clampDuration(long value, long min, long max) {
+        return value < min ? min : Math.min(value, max);
+    }
+
+    private static void logZoomAnim(long base, long duration) {
+        long now = SystemClock.elapsedRealtime();
+        if (now - sLastZoomAnimLogAt < 1500L) return;
+        sLastZoomAnimLogAt = now;
+        XposedBridge.log(LOG + ": animasi zoom " + base + "ms -> " + duration + "ms");
     }
 
     // ------------------------------------------------------------------
@@ -631,9 +723,11 @@ public class HookEntry implements IXposedHookLoadPackage {
                     int zoom = extras.getInt(ConfigReceiver.KEY_ZOOM_MODE, DEFAULT_ZOOM_MODE);
                     int scrim = extras.getInt(ConfigReceiver.KEY_SCRIM, DEFAULT_SCRIM);
                     int corner = extras.getInt(ConfigReceiver.KEY_CORNER, DEFAULT_CORNER);
+                    int zoomAnim = extras.getInt(ConfigReceiver.KEY_ZOOM_ANIM, DEFAULT_ZOOM_ANIM);
                     zoom = zoom < 0 ? 0 : Math.min(zoom, MODE_AUTO);
                     scrim = scrim <= 0 ? 0 : Math.min(scrim, 50);
                     corner = corner <= 0 ? 0 : Math.min(corner, 60);
+                    zoomAnim = zoomAnim <= 0 ? 0 : Math.min(zoomAnim, 2);
 
                     if (sQueryFailed) {
                         sQueryFailed = false;
@@ -648,6 +742,11 @@ public class HookEntry implements IXposedHookLoadPackage {
                         XposedBridge.log(LOG + ": config zoom=" + zoom + " scrim=" + scrim
                                 + "% sudut=" + corner + "dp");
                         reapplyLast();
+                    }
+
+                    if (zoomAnim != sLastZoomAnim) {
+                        sLastZoomAnim = zoomAnim;
+                        XposedBridge.log(LOG + ": config transisiZoom=" + zoomAnim);
                     }
                 }
             }, new Handler(ipcLooper()), Activity.RESULT_OK, null, null);
@@ -689,6 +788,10 @@ public class HookEntry implements IXposedHookLoadPackage {
 
     private static int cornerDp() {
         return sLastCorner < 0 ? DEFAULT_CORNER : sLastCorner;
+    }
+
+    private static int zoomAnimLevel() {
+        return sLastZoomAnim < 0 ? DEFAULT_ZOOM_ANIM : sLastZoomAnim;
     }
 
     /**
