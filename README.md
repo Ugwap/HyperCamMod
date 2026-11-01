@@ -9,7 +9,7 @@ skrip, template, dan dokumentasi. Tidak perlu re-sign APK kamera, jadi tidak ken
 pengecekan signature / `sharedUserId`.
 
 > Status: **jalan** di Poco X7 Pro (`2412DPC0AG` / `rodin`), HyperOS `4.0.0.12.XPTCNXM`
-> (V816), Android 17 (SDK 37), kamera **6.4.000250.3**. Versi modul: **1.4.1**.
+> (V816), Android 17 (SDK 37), kamera **6.4.000250.3**. Versi modul: **1.5.0**.
 > Detail & batasan versi ada di [Kompatibilitas](#kompatibilitas).
 
 ## Yang dilakukan modul
@@ -28,12 +28,20 @@ pengecekan signature / `sharedUserId`.
 2. **Scrim gradient yang bisa diatur** — lapisan gelap di area atas (200dp) dan bawah
    (320dp) supaya ikon/shutter tetap kontras. Level: **Mati** (default), **25%**, atau
    **50%**. Tanpa blur/PixelCopy — ringan, tidak membaca frame.
-3. **Lapisan hitam bawaan dimatikan** — `top_cover_layout`, `bottom_cover_layout`,
+3. **Latar hitam saat zoom** — blok hitam solid **30%** atau **40%** di area atas/bawah
+   yang hanya muncul ketika preview sedang penuh (Otomatis yang sudah di-zoom, atau
+   mode 100%), jadi ikon tetap terbaca tanpa menggelapkan preview di 0,6x/1x. Default
+   **Mati**. Kalau scrim gradient juga aktif, dipakai level yang lebih tinggi
+   (tidak ditumpuk).
+4. **Sudut preview membulat** — `SurfaceView.setCornerRadius` milik sistem dipakai
+   untuk membulatkan sudut preview (sekaligus lubang view-nya), jadi tetap rapi saat
+   preview di-scale. Pilihan **Mati** (default), **20 dp**, **40 dp**.
+5. **Lapisan hitam bawaan dimatikan** — `top_cover_layout`, `bottom_cover_layout`,
    `left/right_cover_layout`, `mask_cover_layout`, `top_config_background`, dst.
    di-set alpha 0 agar tidak menutupi preview.
-4. **Top bar & status bar transparan** supaya preview terlihat menyatu di belakang ikon.
+6. **Top bar & status bar transparan** supaya preview terlihat menyatu di belakang ikon.
 
-5. **Opsi sembunyikan ikon** aplikasi modul dari home screen. Modul tetap aktif dan
+7. **Opsi sembunyikan ikon** aplikasi modul dari home screen. Modul tetap aktif dan
    tetap terdaftar di LSPosed Manager — hanya shortcut-nya yang hilang.
 
 Tidak menyentuh capture, video, atau Pro mode (hanya tampilan preview).
@@ -86,6 +94,7 @@ internal di APK kamera.
 | class `com.android.camera.ui.ShapeBackGroundView` method `d()` | top bar transparan (paint) | hanya efek ini hilang — bagian paling rapuh karena nama method di-obfuscate |
 | class `X5.f` (ZoomManager) method `setZoomRatio(F)` / `e0(FI)` / `n0()` | tahu level zoom untuk mode Otomatis | mode Otomatis jadi 4:3 (bar selalu ada) |
 | `SurfaceView` di dalam `preview_surface_layout` | objek yang di-zoom | zoom dilewati |
+| `SurfaceView.setCornerRadius(float)` (hidden API) | sudut preview membulat | sudut tetap kotak, dicatat di log |
 
 Semua kegagalan di atas bersifat **no-op** dan dicatat di log, bukan crash: kamera
 tetap jalan seperti asli (paling banter efek full-screen-nya tidak muncul).
@@ -114,7 +123,7 @@ Tiga baris penanda sukses (contoh mode Otomatis + scrim mati):
 HyperCamMod: aktif di com.android.camera
 HyperCamMod: hook ShapeBackGroundView.d() terpasang
 HyperCamMod: hook ZoomManager.setZoomRatio terpasang
-HyperCamMod: config zoom=3 scrim=0%
+HyperCamMod: config zoom=3 scrim=0% zoombg=0% sudut=0dp
 ```
 
 Saat zoom melewati ambang, muncul salah satu:
@@ -123,6 +132,10 @@ Saat zoom melewati ambang, muncul salah satu:
 HyperCamMod: auto zoom aktif (2.0x)
 HyperCamMod: auto zoom nonaktif (1.0x)
 ```
+
+Kalau opsi sudut diaktifkan, muncul `sudut preview = Npx`. Kalau baris itu berisi
+`sudut preview gagal (setCornerRadius)`, berarti ROM tidak menyediakan API tersebut
+dan sudut tetap kotak (tidak ada efek samping lain).
 
 Kalau `hook ShapeBackGroundView.d()` gagal, hanya efek top bar transparan yang hilang.
 Kalau `hook ZoomManager.setZoomRatio` gagal, mode Otomatis berperilaku seperti 4:3
@@ -168,6 +181,8 @@ Buka aplikasi **HyperCamMod** (atau dari LSPosed Manager) → bagian
 | --- | --- | --- |
 | Zoom preview | Otomatis (bar hilang saat di-zoom) / Mati (4:3 asli) / 50% / 100% | Otomatis |
 | Scrim gradient atas-bawah | Mati / 25% / 50% | Mati (tanpa kabut) |
+| Latar hitam saat zoom | Mati / 30% / 40% (hanya saat preview penuh) | Mati |
+| Sudut preview | Mati / 20 dp / 40 dp | Mati (kotak) |
 
 Perubahan disimpan saat itu juga, tapi **berlaku setelah kamera dibuka ulang**
 (force stop kamera atau tutup dari recents, lalu buka lagi).
