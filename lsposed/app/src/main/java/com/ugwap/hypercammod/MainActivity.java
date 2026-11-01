@@ -3,29 +3,43 @@ package com.ugwap.hypercammod;
 import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
 /**
- * Layar informasi + satu pengaturan: sembunyikan ikon dari home screen.
- * Semua efek kamera dijalankan oleh HookEntry di proses com.android.camera.
+ * Layar informasi + pengaturan modul:
+ * - tingkat zoom preview (preview ini dijalankan oleh HookEntry di proses kamera)
+ * - tingkat scrim gradient atas/bawah
+ * - sembunyikan ikon dari home screen
  */
 public class MainActivity extends Activity {
+
+    private static final String TAG = "HyperCamModUI";
 
     /** Nama activity-alias yang memegang intent LAUNCHER di manifest. */
     private static final String LAUNCHER_ALIAS = "com.ugwap.hypercammod.Launcher";
 
+    private static final String PREFS_NAME = "hypercammod";
+    private static final String KEY_ZOOM_MODE = "zoom_mode";
+    private static final String KEY_SCRIM = "scrim_level";
+
+    private SharedPreferences prefs;
     private Switch hideSwitch;
     /** Mencegah listener terpanggil saat mengembalikan posisi switch. */
     private boolean suppressListener;
@@ -33,6 +47,10 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        Log.i(TAG, "onCreate dataDir=" + getDataDir()
+                + " prefsDir=" + new java.io.File(getDataDir(), "shared_prefs").getAbsolutePath());
 
         float dp = getResources().getDisplayMetrics().density;
         int pad = Math.round(20 * dp);
@@ -52,16 +70,39 @@ public class MainActivity extends Activity {
         box.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Preview full-screen + scrim untuk kamera HyperOS");
+        subtitle.setText("Preview kamera HyperOS: zoom + scrim bisa diatur");
         subtitle.setTextColor(0xFFFFB300);
         subtitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         subtitle.setPadding(0, Math.round(4 * dp), 0, pad);
         box.addView(subtitle);
 
         box.addView(body(
-                "Modul ini membuat preview kamera bawaan (com.android.camera) menutup "
-                        + "seluruh layar dan menambahkan scrim gradient hitam 50% di area "
+                "Modul ini mengatur preview kamera bawaan (com.android.camera): "
+                        + "seberapa besar preview di-zoom dan seberapa gelap scrim "
                         + "atas/bawah. Logika foto dan video tidak diubah.",
+                dp));
+
+        box.addView(header("Tampilan preview", dp));
+
+        box.addView(body("Zoom preview", dp));
+        box.addView(radioGroup(dp,
+                new String[]{
+                        "Mati - 4:3 asli, bar hitam kembali (paling tajam)",
+                        "50% - bar tertutup separuh (crop ringan)",
+                        "100% - penuh layar (crop paling banyak)"
+                },
+                new int[]{0, 1, 2},
+                KEY_ZOOM_MODE, 1));
+
+        box.addView(body("Scrim gradient atas/bawah", dp));
+        box.addView(radioGroup(dp,
+                new String[]{"Mati", "25%", "50%"},
+                new int[]{0, 25, 50},
+                KEY_SCRIM, 0));
+
+        box.addView(body(
+                "Perubahan berlaku setelah kamera dibuka ulang: force stop kamera "
+                        + "atau tutup dari recents, lalu buka lagi.",
                 dp));
 
         box.addView(header("Cara mengaktifkan", dp));
@@ -96,7 +137,7 @@ public class MainActivity extends Activity {
 
         box.addView(body(
                 "Ikon hanya disembunyikan dari launcher. Modul tetap aktif dan tetap "
-                        + "muncul di daftar LSPosed Manager — tombol buka/setelan di sana "
+                        + "muncul di daftar LSPosed Manager - tombol buka/setelan di sana "
                         + "tetap berfungsi karena memakai category khusus "
                         + "(MODULE_SETTINGS).\n\n"
                         + "Kalau perlu jalan lain, dari PC:\n\n"
@@ -130,6 +171,46 @@ public class MainActivity extends Activity {
 
         scroll.addView(box);
         setContentView(scroll);
+    }
+
+    private RadioGroup radioGroup(float dp, String[] labels, int[] values,
+                                  String key, int defValue) {
+        RadioGroup group = new RadioGroup(this);
+        group.setOrientation(RadioGroup.VERTICAL);
+
+        int current = prefs.getInt(key, defValue);
+        int checkedId = View.NO_ID;
+
+        for (int i = 0; i < labels.length; i++) {
+            RadioButton button = new RadioButton(this);
+            button.setId(View.generateViewId());
+            button.setTag(values[i]);
+            button.setText(labels[i]);
+            button.setTextColor(0xFFCCCCCC);
+            button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            button.setPadding(0, Math.round(4 * dp), 0, Math.round(4 * dp));
+            group.addView(button);
+            if (values[i] == current) checkedId = button.getId();
+        }
+
+        if (checkedId != View.NO_ID) group.check(checkedId);
+
+        group.setOnCheckedChangeListener((g, id) -> {
+            Log.i(TAG, "onCheckedChanged key=" + key + " id=" + id);
+            View view = g.findViewById(id);
+            if (view == null || view.getTag() == null) {
+                Log.w(TAG, "listener: view/tag null (view=" + view + ")");
+                return;
+            }
+            int value = (int) view.getTag();
+            boolean ok = prefs.edit().putInt(key, value).commit();
+            Log.i(TAG, "simpan " + key + "=" + value + " commit=" + ok);
+            Toast.makeText(this, "Tersimpan " + key + "=" + value
+                            + ". Buka ulang kamera untuk melihat efeknya.",
+                    Toast.LENGTH_SHORT).show();
+        });
+
+        return group;
     }
 
     private ComponentName launcherAlias() {

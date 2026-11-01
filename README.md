@@ -9,16 +9,18 @@ skrip, template, dan dokumentasi. Tidak perlu re-sign APK kamera, jadi tidak ken
 pengecekan signature / `sharedUserId`.
 
 > Status: **jalan** di Poco X7 Pro (`2412DPC0AG` / `rodin`), HyperOS `4.0.0.12.XPTCNXM`
-> (V816), Android 17 (SDK 37), kamera **6.4.000250.3**. Versi modul: **1.2.1**.
+> (V816), Android 17 (SDK 37), kamera **6.4.000250.3**. Versi modul: **1.3.0**.
 > Detail & batasan versi ada di [Kompatibilitas](#kompatibilitas).
 
 ## Yang dilakukan modul
 
-1. **Preview center-crop** — SurfaceView preview 4:3 diperbesar (`scale = tinggi layar /
-   tinggi konten`) dengan pivot di tengah area konten, sehingga bar hitam atas/bawah
-   hilang dan preview menutup layar.
-2. **Scrim gradient 50%** (`#80000000`) di area atas (200dp) dan bawah (320dp) supaya
-   ikon/shutter tetap kontras. Tanpa blur/PixelCopy — ringan, tidak membaca frame.
+1. **Preview center-crop yang bisa diatur** — SurfaceView preview 4:3 diperbesar
+   (`scale = 1 + (tinggi layar / tinggi konten - 1) x porsi`) dengan pivot di tengah
+   area konten. Porsi zoom: **Mati** (4:3 asli), **50%** (default), atau **100%**
+   (penuh layar). Bar hitam atas/bawah ikut hilang sesuai porsi.
+2. **Scrim gradient yang bisa diatur** — lapisan gelap di area atas (200dp) dan bawah
+   (320dp) supaya ikon/shutter tetap kontras. Level: **Mati** (default), **25%**, atau
+   **50%**. Tanpa blur/PixelCopy — ringan, tidak membaca frame.
 3. **Lapisan hitam bawaan dimatikan** — `top_cover_layout`, `bottom_cover_layout`,
    `left/right_cover_layout`, `mask_cover_layout`, `top_config_background`, dst.
    di-set alpha 0 agar tidak menutupi preview.
@@ -27,13 +29,14 @@ pengecekan signature / `sharedUserId`.
 5. **Opsi sembunyikan ikon** aplikasi modul dari home screen. Modul tetap aktif dan
    tetap terdaftar di LSPosed Manager — hanya shortcut-nya yang hilang.
 
-Tidak menyentuh capture, video, zoom, atau Pro mode.
+Tidak menyentuh capture, video, atau Pro mode (hanya tampilan preview).
 
 ### Trade-off
 
-Karena memilih **preview full-screen (crop)**, viewfinder ter-crop sekitar 40% di
-kiri–kanan dibanding hasil foto 4:3. Hasil foto/video tetap normal (tidak di-crop).
-Ini konsekuensi dari mengisi layar 20:9 dengan sensor 4:3.
+Semakin besar zoom, semakin banyak viewfinder ter-crop di kiri–kanan dibanding hasil
+foto 4:3 (zoom 100% ≈ 40% ter-crop). Hasil foto/video tetap normal (tidak di-crop).
+Ini konsekuensi dari mengisi layar 20:9 dengan sensor 4:3 — karena itu zoom dibuat
+bisa dimatikan.
 
 ## Kompatibilitas
 
@@ -84,17 +87,18 @@ tetap jalan seperti asli (paling banter efek full-screen-nya tidak muncul).
 adb logcat -s LSPosedFramework | Select-String "HyperCamMod"
 ```
 
-Tiga baris penanda sukses:
+Tiga baris penanda sukses (contoh untuk zoom 50% + scrim mati):
 
 ```
 HyperCamMod: aktif di com.android.camera
 HyperCamMod: hook ShapeBackGroundView.d() terpasang
-HyperCamMod: scrim 50% dipasang
+HyperCamMod: config zoom=1 scrim=0%
 ```
 
 Kalau `hook ShapeBackGroundView.d()` gagal, hanya efek top bar transparan yang hilang.
-Kalau `scrim 50% dipasang` tidak muncul, berarti id resource di ROM itu berbeda dan
-daftar id perlu ditambah.
+Kalau baris `config ...` tidak muncul, pengaturan modul belum terbaca — hook memakai
+nilai default (zoom 50%, scrim mati). Kalau `scrim 25% dipasang` tidak muncul padahal
+scrim diset 25%, berarti id resource di ROM itu berbeda dan daftar id perlu ditambah.
 
 ## Cara build & pasang
 
@@ -123,6 +127,25 @@ adb logcat -s LSPosedFramework | Select-String "HyperCamMod"
 ```
 sdk.dir=C\:\\Users\\<nama>\\AppData\\Local\\Android\\Sdk
 ```
+
+### Pengaturan tampilan
+
+Buka aplikasi **HyperCamMod** (atau dari LSPosed Manager) → bagian
+**Tampilan preview**:
+
+| Pengaturan | Pilihan | Default |
+| --- | --- | --- |
+| Zoom preview | Mati (4:3 asli) / 50% / 100% (penuh layar) | 50% |
+| Scrim gradient atas-bawah | Mati / 25% / 50% | Mati (tanpa kabut) |
+
+Perubahan disimpan saat itu juga, tapi **berlaku setelah kamera dibuka ulang**
+(force stop kamera atau tutup dari recents, lalu buka lagi).
+
+Catatan teknis: pengaturan dibaca proses kamera lewat **ordered broadcast eksplisit**
+(`ConfigReceiver`). `XSharedPreferences` tidak dipakai karena di ROM ini LSPosed
+mengalihkan SharedPreferences modul ke `/data/misc/apexdata` dan SELinux menolak
+penulisannya, sedangkan ContentProvider/bound Service tidak bisa diakses karena
+package visibility (`not found`).
 
 ### Sembunyikan ikon modul
 

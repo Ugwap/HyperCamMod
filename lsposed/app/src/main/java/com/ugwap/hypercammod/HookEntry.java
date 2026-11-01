@@ -1,7 +1,10 @@
 package com.ugwap.hypercammod;
 
 import android.app.Activity;
+import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
 import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.graphics.Canvas;
@@ -10,6 +13,10 @@ import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Shader;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.HandlerThread;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.SurfaceView;
 import android.view.View;
@@ -18,6 +25,7 @@ import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.widget.FrameLayout;
 
+import java.lang.ref.WeakReference;
 import java.util.WeakHashMap;
 
 import de.robv.android.xposed.IXposedHookLoadPackage;
@@ -39,6 +47,30 @@ public class HookEntry implements IXposedHookLoadPackage {
 
     private static final String PKG = "com.android.camera";
     private static final String LOG = "HyperCamMod";
+
+    /**
+     * Konfigurasi dari layar modul, dibaca dari proses kamera lewat ordered
+     * broadcast eksplisit (lihat ConfigReceiver). Bukan XSharedPreferences:
+     * di ROM ini LSPosed mengalihkan SharedPreferences modul ke
+     * /data/misc/apexdata dan SELinux menolak penulisannya.
+     */
+    private static final int DEFAULT_ZOOM_MODE = ConfigReceiver.DEFAULT_ZOOM_MODE;
+    /** Default tanpa scrim supaya preview tidak terasa berkabut. */
+    private static final int DEFAULT_SCRIM = ConfigReceiver.DEFAULT_SCRIM;
+
+    private static long sPrefsCheckedAt;
+    private static long sRetryAfter;
+    private static boolean sRequestInFlight;
+    private static int sLastZoomMode = -1;
+    private static int sLastScrim = -1;
+    private static boolean sQueryFailed;
+
+    /** Looper thread untuk menerima balasan ordered broadcast. */
+    private static Looper sIpcThread;
+
+    /** View terakhir, supaya config yang baru terbaca bisa langsung diterapkan. */
+    private static WeakReference<Activity> sLastActivity;
+    private static WeakReference<View> sLastDecor;
 
     private static final String TAG_TOP = "hcm_scrim_top";
     private static final String TAG_BOTTOM = "hcm_scrim_bottom";
@@ -165,6 +197,10 @@ public class HookEntry implements IXposedHookLoadPackage {
 
     private static void apply(Activity activity, View decor) {
         try {
+            sLastActivity = new WeakReference<>(activity);
+            sLastDecor = new WeakReference<>(decor);
+            reloadPrefs(activity);
+
             Resources res = activity.getResources();
             int[] ids = ids(res);
 
@@ -172,14 +208,17 @@ public class HookEntry implements IXposedHookLoadPackage {
             if (!(root instanceof FrameLayout)) return;
             FrameLayout container = (FrameLayout) root;
 
-            if (!hasScrims(container)) {
+            int scrim = scrimLevel();
+            if (scrim <= 0) {
+                removeScrims(container);
+            } else if (!hasScrims(container, scrim)) {
                 boolean landscape = res.getConfiguration().orientation
                         == Configuration.ORIENTATION_LANDSCAPE;
 
                 removeScrims(container);
 
-                View top = makeScrim(activity, true, res, landscape);
-                View bottom = makeScrim(activity, false, res, landscape);
+                View top = makeScrim(activity, true, res, landscape, scrim);
+                View bottom = makeScrim(activity, false, res, landscape, scrim);
 
                 int index = childIndexById(container, ids[ID_LOWER]);
                 if (index < 0) index = Math.min(1, container.getChildCount());
@@ -187,7 +226,7 @@ public class HookEntry implements IXposedHookLoadPackage {
                 container.addView(top, index, params(res, true, landscape));
                 container.addView(bottom, index + 1, params(res, false, landscape));
 
-                XposedBridge.log(LOG + ": scrim 50% dipasang");
+                XposedBridge.log(LOG + ": scrim " + scrim + "% dipasang");
             }
 
             clearCovers(decor);
@@ -215,9 +254,9 @@ public class HookEntry implements IXposedHookLoadPackage {
     }
 
     /**
-     * Perbesar preview 4:3 (center-crop) sampai menutup seluruh layar, sehingga
-     * bar hitam atas/bawah hilang. Skala dihitung dari tinggi area preview asli
-     * (bounds gl_root_cover) supaya tetap benar untuk rasio lain.
+     * Perbesar preview 4:3 (center-crop) sesuai pengaturan zoom:
+     * 0 = tanpa zoom, 1 = setengah dari gap, 2 = penuh layar. Skala dihitung dari
+     * tinggi area preview asli (bounds gl_root_cover) supaya benar untuk rasio lain.
      */
     private static void zoomPreview(View decor, int[] ids) {
         View previewLayout = ids[ID_PREVIEW] == 0 ? null : decor.findViewById(ids[ID_PREVIEW]);
@@ -249,7 +288,16 @@ public class HookEntry implements IXposedHookLoadPackage {
             return;
         }
 
-        float scale = h / contentHeight;
+        int mode = zoomMode();
+        float fillScale = h / contentHeight;
+        if (mode <= 0 || fillScale <= 1.001f) {
+            resetZoom(surface);
+            return;
+        }
+
+        // 50% = separuh gap ditutup, jadi crop dan upscale-nya lebih ringan.
+        float fraction = mode == 1 ? 0.5f : 1f;
+        float scale = 1f + (fillScale - 1f) * fraction;
         float contentCenterY = (contentTop + contentBottom) / 2f;
 
         surface.setPivotX(w / 2f);
@@ -269,9 +317,11 @@ public class HookEntry implements IXposedHookLoadPackage {
         }
     }
 
-    private static View makeScrim(Activity activity, boolean top, Resources res, boolean landscape) {
-        // Scrim translusen 50% hitam (#80000000) supaya area atas/bawah lebih gelap.
-        int scrim = 0x80000000;
+    private static View makeScrim(Activity activity, boolean top, Resources res,
+                                  boolean landscape, int level) {
+        // level = persen alpha hitam (0/25/50).
+        int alpha = Math.round(255f * level / 100f);
+        int scrim = (alpha << 24);
         int[] colors = top
                 ? new int[]{scrim, scrim, 0x00000000}
                 : new int[]{0x00000000, scrim, scrim};
@@ -279,7 +329,7 @@ public class HookEntry implements IXposedHookLoadPackage {
                 ? new float[]{0f, 0.55f, 1f}
                 : new float[]{0f, 0.45f, 1f};
 
-        ScrimView view = new ScrimView(activity, colors, stops);
+        ScrimView view = new ScrimView(activity, colors, stops, level);
         view.setTag(top ? TAG_TOP : TAG_BOTTOM);
         view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         view.setClickable(false);
@@ -292,11 +342,13 @@ public class HookEntry implements IXposedHookLoadPackage {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final int[] colors;
         private final float[] stops;
+        final int level;
 
-        ScrimView(Context context, int[] colors, float[] stops) {
+        ScrimView(Context context, int[] colors, float[] stops, int level) {
             super(context);
             this.colors = colors;
             this.stops = stops;
+            this.level = level;
             setWillNotDraw(false);
         }
 
@@ -350,12 +402,13 @@ public class HookEntry implements IXposedHookLoadPackage {
     }
 
     /** Cek langsung tipe ScrimView di child teratas (lebih andal daripada tag lookup). */
-    private static boolean hasScrims(ViewGroup parent) {
+    private static boolean hasScrims(ViewGroup parent, int level) {
         boolean top = false;
         boolean bottom = false;
         for (int i = 0; i < parent.getChildCount(); i++) {
             View child = parent.getChildAt(i);
             if (!(child instanceof ScrimView)) continue;
+            if (((ScrimView) child).level != level) return false;
             if (TAG_TOP.equals(child.getTag())) top = true;
             if (TAG_BOTTOM.equals(child.getTag())) bottom = true;
         }
@@ -380,6 +433,95 @@ public class HookEntry implements IXposedHookLoadPackage {
             }
         }
         return null;
+    }
+
+    /**
+     * Baca konfigurasi modul lewat ordered broadcast eksplisit. Di-throttle
+     * 1 detik supaya tidak IPC terus-menerus saat onGlobalLayout berulang.
+     *
+     * Broadcast eksplisit dipakai karena paket modul tidak terlihat dari
+     * aplikasi Kamera (package visibility): ContentProvider maupun bound
+     * Service sama-sama "not found" saat diakses dari proses kamera.
+     */
+    private static void reloadPrefs(Context context) {
+        long now = SystemClock.elapsedRealtime();
+        if (now - sPrefsCheckedAt < 1000L || sRequestInFlight || now < sRetryAfter) return;
+        sPrefsCheckedAt = now;
+        sRequestInFlight = true;
+
+        try {
+            Intent intent = new Intent(ConfigReceiver.ACTION);
+            intent.setComponent(new ComponentName(ConfigReceiver.PKG, ConfigReceiver.COMPONENT));
+
+            context.sendOrderedBroadcast(intent, null, new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context ctx, Intent reply) {
+                    sRequestInFlight = false;
+
+                    Bundle extras = getResultExtras(false);
+                    if (getResultCode() != Activity.RESULT_OK || extras == null) {
+                        // Proses modul belum siap / dimatikan: jeda dulu supaya
+                        // tidak mengirim broadcast terus-menerus.
+                        sRetryAfter = SystemClock.elapsedRealtime() + 10000L;
+                        if (!sQueryFailed) {
+                            sQueryFailed = true;
+                            XposedBridge.log(LOG + ": pengaturan modul belum bisa dibaca");
+                        }
+                        return;
+                    }
+
+                    int zoom = extras.getInt(ConfigReceiver.KEY_ZOOM_MODE, DEFAULT_ZOOM_MODE);
+                    int scrim = extras.getInt(ConfigReceiver.KEY_SCRIM, DEFAULT_SCRIM);
+                    zoom = zoom < 0 ? 0 : Math.min(zoom, 2);
+                    scrim = scrim <= 0 ? 0 : Math.min(scrim, 50);
+
+                    if (sQueryFailed) {
+                        sQueryFailed = false;
+                        XposedBridge.log(LOG + ": pengaturan modul terbaca lagi");
+                    }
+
+                    if (zoom != sLastZoomMode || scrim != sLastScrim) {
+                        sLastZoomMode = zoom;
+                        sLastScrim = scrim;
+                        XposedBridge.log(LOG + ": config zoom=" + zoom + " scrim=" + scrim + "%");
+                        reapplyLast();
+                    }
+                }
+            }, new Handler(ipcLooper()), Activity.RESULT_OK, null, null);
+        } catch (Throwable t) {
+            sRequestInFlight = false;
+            sRetryAfter = SystemClock.elapsedRealtime() + 10000L;
+            if (!sQueryFailed) {
+                sQueryFailed = true;
+                XposedBridge.log(LOG + ": baca config gagal: " + t);
+            }
+        }
+    }
+
+    /** Setelah config berubah, terapkan ulang ke view yang sedang tampil. */
+    private static void reapplyLast() {
+        Activity activity = sLastActivity == null ? null : sLastActivity.get();
+        View decor = sLastDecor == null ? null : sLastDecor.get();
+        if (activity == null || decor == null) return;
+        activity.runOnUiThread(() -> apply(activity, decor));
+    }
+
+    /** Looper thread terpisah supaya balasan broadcast bisa masuk saat UI sibuk. */
+    private static Looper ipcLooper() {
+        if (sIpcThread == null) {
+            HandlerThread thread = new HandlerThread("hcm-ipc");
+            thread.start();
+            sIpcThread = thread.getLooper();
+        }
+        return sIpcThread;
+    }
+
+    private static int zoomMode() {
+        return sLastZoomMode < 0 ? DEFAULT_ZOOM_MODE : sLastZoomMode;
+    }
+
+    private static int scrimLevel() {
+        return sLastScrim < 0 ? DEFAULT_SCRIM : sLastScrim;
     }
 
     private static int[] ids(Resources res) {

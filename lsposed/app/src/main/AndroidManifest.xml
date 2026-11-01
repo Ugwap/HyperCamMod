@@ -17,6 +17,22 @@
         <meta-data
             android:name="xposedminversion"
             android:value="82" />
+        <!--
+            Catatan: meta-data xposedsharedprefs sengaja TIDAK dipakai.
+            Di ROM ini LSPosed mengalihkan SharedPreferences modul ke
+            /data/misc/apexdata dan SELinux menolak penulisannya, sehingga
+            pengaturan tidak pernah tersimpan. Konfigurasi dibaca proses
+            kamera lewat ordered broadcast (ConfigReceiver).
+        -->
+
+        <receiver
+            android:name=".ConfigReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.ugwap.hypercammod.action.GET_CONFIG" />
+            </intent-filter>
+        </receiver>
 
         <activity
             android:name=".MainActivity"
