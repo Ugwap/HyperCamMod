@@ -9,7 +9,7 @@ skrip, template, dan dokumentasi. Tidak perlu re-sign APK kamera, jadi tidak ken
 pengecekan signature / `sharedUserId`.
 
 > Status: **jalan** di Poco X7 Pro (`2412DPC0AG` / `rodin`), HyperOS `4.0.0.12.XPTCNXM`
-> (V816), Android 17 (SDK 37), kamera **6.4.000250.3**. Versi modul: **1.4.0**.
+> (V816), Android 17 (SDK 37), kamera **6.4.000250.3**. Versi modul: **1.4.1**.
 > Detail & batasan versi ada di [Kompatibilitas](#kompatibilitas).
 
 ## Yang dilakukan modul
@@ -18,7 +18,10 @@ pengecekan signature / `sharedUserId`.
    (tinggi layar / tinggi konten - 1) x porsi`) dengan pivot di tengah area konten.
    Pilihan:
    - **Otomatis** (default) — di 0,6x / 1x bar hitam atas-bawah tetap ada; begitu
-     preview di-zoom (≥ ~1,2x) preview memenuhi layar dan bar hilang.
+     preview di-zoom (≥ ~1,2x) preview memenuhi layar dan bar hilang. Perpindahannya
+     **dianimasikan ~220 ms** (decelerate) supaya tidak terlihat "patah", dan ada
+     histeresis: kembali ke 4:3 saat zoom turun di bawah **1,02x** agar tidak berkedip
+     di batas ambang.
    - **Mati** — selalu 4:3 asli dengan bar.
    - **50%** — bar tertutup separuh, selalu.
    - **100%** — penuh layar, selalu.
@@ -40,9 +43,12 @@ Tidak menyentuh capture, video, atau Pro mode (hanya tampilan preview).
 Modul membaca rasio zoom aktif dari `ZoomManager` kamera (`X5.f`, implementasi
 `W5.a`): hook `setZoomRatio(float)` dan `e0(float, int)` (update aksi zoom), lalu
 nilai terbaru diambil lewat getter `n0()`. Ambangnya **1,05x**: 0,6x dan 1x dianggap
-"belum zoom", 2x ke atas memicu layar penuh. Kalau hook ini gagal (nama class berubah
-di ROM lain), mode Otomatis jatuh ke perilaku 4:3 (bar tetap ada) dan alasannya
-dicatat di log.
+"belum zoom", 2x ke atas memicu layar penuh. Transisi skala dianimasikan 220 ms
+dengan `ValueAnimator` + `DecelerateInterpolator`; animasi baru dimulai saat ambang
+benar-benar terlewati (target berubah), jadi tidak diulang oleh layout listener.
+Saat turun, tampilan baru kembali 4:3 di bawah 1,02x (histeresis). Kalau hook ini
+gagal (nama class berubah di ROM lain), mode Otomatis jatuh ke perilaku 4:3 (bar
+tetap ada) dan alasannya dicatat di log.
 
 
 ### Trade-off

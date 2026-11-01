@@ -1,5 +1,8 @@
 package com.ugwap.hypercammod;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
@@ -23,6 +26,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.view.Window;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 
 import java.lang.ref.WeakReference;
@@ -76,8 +80,11 @@ public class HookEntry implements IXposedHookLoadPackage {
     private static final int MODE_AUTO = 3;
     /** Ambang zoom: 0.6x dan 1x masih dianggap "belum zoom". */
     private static final float AUTO_ZOOM_THRESHOLD = 1.05f;
+    /** Ambang turun (histeresis) supaya tampilan tidak bolak-balik di batas zoom. */
+    private static final float AUTO_ZOOM_RELEASE = 1.02f;
 
     private static volatile float sZoomRatio = 1f;
+    private static volatile boolean sAutoFilled;
     private static WeakReference<Object> sZoomManager;
 
     private static final String TAG_TOP = "hcm_scrim_top";
@@ -327,53 +334,113 @@ public class HookEntry implements IXposedHookLoadPackage {
         }
 
         float contentHeight = contentBottom - contentTop;
+        float fillScale;
+        float centerY;
         if (contentHeight <= 0f || contentHeight > h * 0.98f) {
             // Sudah full-screen / rasio tidak diketahui: jangan diubah.
-            resetZoom(surface);
-            return;
-        }
-
-        int mode = zoomMode();
-        float fillScale = h / contentHeight;
-        if (fillScale <= 1.001f) {
-            resetZoom(surface);
-            return;
-        }
-
-        float fraction;
-        if (mode == MODE_AUTO) {
-            // Otomatis: bar hitam hanya hilang saat preview benar-benar di-zoom.
-            if (!autoFill()) {
-                resetZoom(surface);
-                return;
-            }
-            fraction = 1f;
-        } else if (mode <= 0) {
-            resetZoom(surface);
-            return;
+            fillScale = 1f;
+            centerY = h / 2f;
         } else {
-            // 50% = separuh gap ditutup, jadi crop dan upscale-nya lebih ringan.
-            fraction = mode == 1 ? 0.5f : 1f;
+            fillScale = h / contentHeight;
+            centerY = (contentTop + contentBottom) / 2f;
         }
 
-        float scale = 1f + (fillScale - 1f) * fraction;
-        float contentCenterY = (contentTop + contentBottom) / 2f;
+        float fraction = 0f;
+        if (fillScale > 1.001f) {
+            int mode = zoomMode();
+            if (mode == MODE_AUTO) {
+                // Otomatis: bar hitam hanya hilang saat preview benar-benar di-zoom.
+                fraction = autoFill() ? 1f : 0f;
+            } else if (mode > 0) {
+                // 50% = separuh gap ditutup, jadi crop dan upscale-nya lebih ringan.
+                fraction = mode == 1 ? 0.5f : 1f;
+            }
+        }
 
-        surface.setPivotX(w / 2f);
-        surface.setPivotY(contentCenterY);
-        surface.setScaleX(scale);
-        surface.setScaleY(scale);
-        surface.setTranslationY(h / 2f - contentCenterY);
+        animateZoom(surface, fraction, fillScale, w, h, centerY);
     }
 
-    private static void resetZoom(SurfaceView surface) {
-        if (surface.getScaleX() != 1f || surface.getTranslationY() != 0f) {
-            surface.setPivotX(surface.getWidth() / 2f);
-            surface.setPivotY(surface.getHeight() / 2f);
-            surface.setScaleX(1f);
-            surface.setScaleY(1f);
-            surface.setTranslationY(0f);
+    /** Durasi transisi preview supaya perpindahan bar hitam <-> penuh tidak "patah". */
+    private static final long ZOOM_ANIM_MS = 220L;
+
+    /** Status animasi per SurfaceView: target terakhir dan animator yang berjalan. */
+    private static final WeakHashMap<SurfaceView, ZoomState> ZOOM_STATES = new WeakHashMap<>();
+
+    private static final class ZoomState {
+        /** Nilai yang sedang ditampilkan (0 = 4:3 dengan bar, 1 = penuh layar). */
+        float fraction;
+        /** Nilai tujuan terakhir. */
+        float target;
+        ValueAnimator animator;
+    }
+
+    /**
+     * Terapkan skala preview dengan animasi halus. Target yang sama tidak
+     * mengulang animasi, jadi aman dipanggil dari global layout listener.
+     */
+    private static void animateZoom(final SurfaceView surface, float targetFraction,
+                                    float fillScale, int w, int h, float centerY) {
+        float safe = targetFraction < 0f ? 0f : Math.min(targetFraction, 1f);
+
+        ZoomState state = ZOOM_STATES.get(surface);
+        if (state == null) {
+            // View pertama kali dipakai (kamera baru dibuka): pasang langsung.
+            state = new ZoomState();
+            state.fraction = safe;
+            state.target = safe;
+            ZOOM_STATES.put(surface, state);
+            setZoomTransforms(surface, safe, fillScale, w, h, centerY);
+            return;
         }
+
+        if (Math.abs(state.target - safe) < 0.001f) {
+            // Target tidak berubah: biarkan animasi berjalan, atau pastikan
+            // posisi akhir tetap benar setelah layout berubah.
+            if (state.animator == null || !state.animator.isRunning()) {
+                setZoomTransforms(surface, safe, fillScale, w, h, centerY);
+            }
+            return;
+        }
+
+        state.target = safe;
+        ValueAnimator previous = state.animator;
+        if (previous != null) {
+            // Null-kan dulu supaya callback cancel() animasi lama tidak
+            // melompatkan tampilan ke target baru.
+            state.animator = null;
+            previous.cancel();
+        }
+
+        final ZoomState s = state;
+        ValueAnimator anim = ValueAnimator.ofFloat(s.fraction, safe);
+        anim.setDuration(ZOOM_ANIM_MS);
+        anim.setInterpolator(new DecelerateInterpolator());
+        anim.addUpdateListener(a -> {
+            s.fraction = (Float) a.getAnimatedValue();
+            setZoomTransforms(surface, s.fraction, fillScale, w, h, centerY);
+        });
+        anim.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (s.animator != animation) return;  // sudah diganti animasi baru
+                s.fraction = s.target;
+                s.animator = null;
+                setZoomTransforms(surface, s.fraction, fillScale, w, h, centerY);
+            }
+        });
+        s.animator = anim;
+        anim.start();
+    }
+
+    /** Pivot di tengah area konten; translationY ikut diinterpolasi agar mulus. */
+    private static void setZoomTransforms(SurfaceView surface, float fraction,
+                                          float fillScale, int w, int h, float centerY) {
+        float scale = 1f + (fillScale - 1f) * fraction;
+        surface.setPivotX(w / 2f);
+        surface.setPivotY(centerY);
+        surface.setScaleX(scale);
+        surface.setScaleY(scale);
+        surface.setTranslationY((h / 2f - centerY) * fraction);
     }
 
     private static View makeScrim(Activity activity, boolean top, Resources res,
@@ -583,7 +650,11 @@ public class HookEntry implements IXposedHookLoadPackage {
         return sLastScrim < 0 ? DEFAULT_SCRIM : sLastScrim;
     }
 
-    /** Mode Otomatis: preview dianggap "sudah di-zoom" kalau rasio > 1.05x. */
+    /**
+     * Mode Otomatis: preview dianggap "sudah di-zoom" kalau rasio > 1,05x.
+     * Pakai histeresis: setelah penuh layar, baru kembali 4:3 di bawah 1,02x
+     * supaya tidak berkedip saat jari berhenti tepat di batas ambang.
+     */
     private static boolean autoFill() {
         Object manager = sZoomManager == null ? null : sZoomManager.get();
         if (manager != null) {
@@ -594,7 +665,9 @@ public class HookEntry implements IXposedHookLoadPackage {
                 // Pakai nilai cache kalau getter tidak tersedia.
             }
         }
-        return sZoomRatio > AUTO_ZOOM_THRESHOLD;
+        float threshold = sAutoFilled ? AUTO_ZOOM_RELEASE : AUTO_ZOOM_THRESHOLD;
+        sAutoFilled = sZoomRatio > threshold;
+        return sAutoFilled;
     }
 
     /** Dipanggil dari hook ZoomManager saat rasio zoom berubah. */
@@ -614,10 +687,13 @@ public class HookEntry implements IXposedHookLoadPackage {
         }
         if (value <= 0f) return;
 
-        boolean wasFill = autoFill();
         sZoomRatio = value;
-        boolean nowFill = sZoomRatio > AUTO_ZOOM_THRESHOLD;
-        if (wasFill == nowFill || zoomMode() != MODE_AUTO) return;
+        float threshold = sAutoFilled ? AUTO_ZOOM_RELEASE : AUTO_ZOOM_THRESHOLD;
+        boolean nowFill = value > threshold;
+        if (nowFill == sAutoFilled) return;
+
+        sAutoFilled = nowFill;
+        if (zoomMode() != MODE_AUTO) return;
 
         XposedBridge.log(LOG + ": auto zoom " + (nowFill ? "aktif" : "nonaktif")
                 + " (" + value + "x)");
