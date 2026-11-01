@@ -487,18 +487,23 @@ public class HookEntry implements IXposedHookLoadPackage {
     }
 
     private static View makeScrim(Activity activity, boolean top, Resources res,
-                                  boolean landscape, int level, boolean solid) {
+                                  boolean landscape, int level, boolean zoomStyle) {
         // level = persen alpha hitam (0/25/30/40/50).
         int alpha = Math.round(255f * level / 100f);
         int scrim = (alpha << 24);
         int[] colors = top
                 ? new int[]{scrim, scrim, 0x00000000}
                 : new int[]{0x00000000, scrim, scrim};
-        float[] stops = top
-                ? new float[]{0f, 0.55f, 1f}
-                : new float[]{0f, 0.45f, 1f};
+        // Gaya "latar zoom" dibuat lebih lembut: bagian gelapnya menempel di tepi
+        // layar lalu cepat memudar, supaya tidak terlihat seperti bar yang dipotong.
+        float[] stops;
+        if (zoomStyle) {
+            stops = top ? new float[]{0f, 0.22f, 1f} : new float[]{0f, 0.28f, 1f};
+        } else {
+            stops = top ? new float[]{0f, 0.55f, 1f} : new float[]{0f, 0.45f, 1f};
+        }
 
-        ScrimView view = new ScrimView(activity, colors, stops, level, solid);
+        ScrimView view = new ScrimView(activity, colors, stops, level, zoomStyle);
         view.setTag(top ? TAG_TOP : TAG_BOTTOM);
         view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         view.setClickable(false);
@@ -506,33 +511,28 @@ public class HookEntry implements IXposedHookLoadPackage {
         return view;
     }
 
-    /** View sederhana yang menggambar gradient (atau blok solid) dengan posisi presisi. */
+    /** View sederhana yang menggambar gradient dengan posisi warna presisi. */
     private static class ScrimView extends View {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final int[] colors;
         private final float[] stops;
         final int level;
-        final boolean solid;
+        final boolean zoomStyle;
 
-        ScrimView(Context context, int[] colors, float[] stops, int level, boolean solid) {
+        ScrimView(Context context, int[] colors, float[] stops, int level, boolean zoomStyle) {
             super(context);
             this.colors = colors;
             this.stops = stops;
             this.level = level;
-            this.solid = solid;
+            this.zoomStyle = zoomStyle;
             setWillNotDraw(false);
         }
 
         @Override
         protected void onSizeChanged(int w, int h, int oldw, int oldh) {
             super.onSizeChanged(w, h, oldw, oldh);
-            if (solid) {
-                paint.setShader(null);
-                paint.setColor(colors[0]);
-            } else {
-                paint.setShader(new LinearGradient(
-                        0f, 0f, 0f, Math.max(1, h), colors, stops, Shader.TileMode.CLAMP));
-            }
+            paint.setShader(new LinearGradient(
+                    0f, 0f, 0f, Math.max(1, h), colors, stops, Shader.TileMode.CLAMP));
         }
 
         @Override
@@ -578,14 +578,14 @@ public class HookEntry implements IXposedHookLoadPackage {
     }
 
     /** Cek langsung tipe ScrimView di child teratas (lebih andal daripada tag lookup). */
-    private static boolean hasScrims(ViewGroup parent, int level, boolean solid) {
+    private static boolean hasScrims(ViewGroup parent, int level, boolean zoomStyle) {
         boolean top = false;
         boolean bottom = false;
         for (int i = 0; i < parent.getChildCount(); i++) {
             View child = parent.getChildAt(i);
             if (!(child instanceof ScrimView)) continue;
             ScrimView scrim = (ScrimView) child;
-            if (scrim.level != level || scrim.solid != solid) return false;
+            if (scrim.level != level || scrim.zoomStyle != zoomStyle) return false;
             if (TAG_TOP.equals(child.getTag())) top = true;
             if (TAG_BOTTOM.equals(child.getTag())) bottom = true;
         }

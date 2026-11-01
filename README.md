@@ -28,11 +28,12 @@ pengecekan signature / `sharedUserId`.
 2. **Scrim gradient yang bisa diatur** — lapisan gelap di area atas (200dp) dan bawah
    (320dp) supaya ikon/shutter tetap kontras. Level: **Mati** (default), **25%**, atau
    **50%**. Tanpa blur/PixelCopy — ringan, tidak membaca frame.
-3. **Latar hitam saat zoom** — blok hitam solid **30%** atau **40%** di area atas/bawah
+3. **Latar hitam saat zoom** — gradient hitam **30%** atau **40%** di area atas/bawah
    yang hanya muncul ketika preview sedang penuh (Otomatis yang sudah di-zoom, atau
    mode 100%), jadi ikon tetap terbaca tanpa menggelapkan preview di 0,6x/1x. Default
-   **Mati**. Kalau scrim gradient juga aktif, dipakai level yang lebih tinggi
-   (tidak ditumpuk).
+   **Mati**. Gradiennya dibuat lebih lembut dari scrim biasa (gelap menempel di tepi,
+   cepat memudar) supaya tidak terlihat seperti bar yang dipotong. Kalau scrim biasa
+   juga aktif, dipakai level yang lebih tinggi (tidak ditumpuk).
 4. **Sudut preview membulat** — `SurfaceView.setCornerRadius` milik sistem dipakai
    untuk membulatkan sudut preview (sekaligus lubang view-nya), jadi tetap rapi saat
    preview di-scale. Pilihan **Mati** (default), **20 dp**, **40 dp**.

@@ -6,8 +6,11 @@ Dua opsi tampilan baru: **latar hitam yang hanya muncul saat zoom** dan
 ### Yang baru
 
 - **Latar hitam saat zoom** (Mati / **30%** / **40%**)
-  - Berupa blok hitam solid di area atas/bawah, dan hanya muncul ketika preview
-    sedang penuh — mode **Otomatis** yang sudah di-zoom, atau mode **100%**.
+  - Berupa gradient lembut di area atas/bawah (gelap menempel di tepi layar lalu
+    cepat memudar), dan hanya muncul ketika preview sedang penuh — mode
+    **Otomatis** yang sudah di-zoom, atau mode **100%**.
+  - Dibuat lebih lembut dari scrim biasa supaya tidak terlihat seperti bar yang
+    dipotong di tengah gambar.
   - Di 0,6x / 1x (bar hitam masih ada) latar ini tidak terlihat, jadi preview
     tetap terang.
   - Kalau scrim biasa juga aktif, dipakai level yang lebih tinggi — tidak
