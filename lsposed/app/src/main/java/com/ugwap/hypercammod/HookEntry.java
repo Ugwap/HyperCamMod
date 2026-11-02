@@ -142,10 +142,18 @@ public class HookEntry implements IXposedHookLoadPackage {
      *
      * Hook di dua tempat pembuatan animator itu, lalu durasi dan kurvanya
      * diganti supaya perpindahan zoom melambat di akhir:
-     * - Zb.g.i(float, float): dipakai FragmentZoomToggle / ZoomPanel / DualMenu.
-     * - FragmentZoomToggle.Yh(float, float): jalur animasi cadangan.
+     * - Vr.j.m / Vr.j.n (kamera 6.7+): durasi baru dipasang pemanggil
+     *   setelahnya (0/100/150 ms), jadi animator ditandai dulu lalu dirapikan
+     *   tepat sebelum start().
+     * - Zb.g.i(float, float): dipakai FragmentZoomToggle / ZoomPanel / DualMenu
+     *   di kamera 6.4.
+     * - FragmentZoomToggle.Yh(float, float): jalur animasi cadangan kamera 6.4.
      */
     private void hookZoomAnimation(ClassLoader cl) {
+        hookZoomAnimFactory(cl, "Vr.j", "m");
+        hookZoomAnimFactory(cl, "Vr.j", "n");
+        hookAnimatorStart();
+
         try {
             Class<?> helper = XposedHelpers.findClass("Zb.g", cl);
             XposedHelpers.findAndHookMethod(helper, "i", float.class, float.class,
@@ -186,6 +194,64 @@ public class HookEntry implements IXposedHookLoadPackage {
         }
     }
 
+    /** Animator zoom yang sudah dibuat tapi belum di-start. */
+    private static final java.util.Set<ValueAnimator> ZOOM_ANIMS =
+            java.util.Collections.newSetFromMap(
+                    new WeakHashMap<ValueAnimator, Boolean>());
+
+    /**
+     * Tandai animator hasil pabrik animator zoom kamera. Durasi aslinya baru
+     * dipasang pemanggil setelah fungsi ini, jadi perapian dilakukan di
+     * {@link #hookAnimatorStart()} tepat sebelum {@code start()}.
+     */
+    private boolean hookZoomAnimFactory(ClassLoader cl, String className, String method) {
+        try {
+            Class<?> helper = XposedHelpers.findClass(className, cl);
+            XposedHelpers.findAndHookMethod(helper, method, float.class, float.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            Object result = param.getResult();
+                            if (result instanceof ValueAnimator) {
+                                synchronized (ZOOM_ANIMS) {
+                                    ZOOM_ANIMS.add((ValueAnimator) result);
+                                }
+                            }
+                        }
+                    });
+            XposedBridge.log(LOG + ": hook animasi zoom (" + className + "."
+                    + method + ") terpasang");
+            return true;
+        } catch (Throwable t) {
+            XposedBridge.log(LOG + ": hook animasi zoom " + className + "." + method
+                    + " gagal: " + t);
+            return false;
+        }
+    }
+
+    /** Rapikan durasi/kurva animator zoom yang sudah ditandai, sebelum start(). */
+    private void hookAnimatorStart() {
+        try {
+            XposedHelpers.findAndHookMethod(ValueAnimator.class, "start",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            ValueAnimator anim = (ValueAnimator) param.thisObject;
+                            boolean marked;
+                            synchronized (ZOOM_ANIMS) {
+                                marked = ZOOM_ANIMS.remove(anim);
+                            }
+                            if (marked) {
+                                smoothZoomAnim(anim);
+                            }
+                        }
+                    });
+            XposedBridge.log(LOG + ": hook ValueAnimator.start terpasang");
+        } catch (Throwable t) {
+            XposedBridge.log(LOG + ": hook ValueAnimator.start gagal: " + t);
+        }
+    }
+
     /** Ubah durasi/kurva animator zoom sesuai pilihan di aplikasi modul. */
     private static void smoothZoomAnim(ValueAnimator anim) {
         int level = zoomAnimLevel();
@@ -222,33 +288,49 @@ public class HookEntry implements IXposedHookLoadPackage {
     // ------------------------------------------------------------------
 
     /**
-     * Ambil rasio zoom aktif dari ZoomManager kamera (X5.f = implementasi W5.a).
+     * Ambil rasio zoom aktif dari ZoomManager kamera.
      * Dipakai mode Otomatis: bar hitam hanya hilang saat rasio > 1 (mis. 2x),
      * sedangkan di 0.6x / 1x preview tetap 4:3 dengan bar.
+     *
+     * Implementasinya berpindah antar versi kamera:
+     * - 6.7+ : k9.j (method setZoomRatio, d4, qc)
+     * - 6.4  : X5.f (method setZoomRatio, e0)
      */
     private void hookZoomManager(ClassLoader cl) {
+        XC_MethodHook ratioHook = new XC_MethodHook() {
+            @Override
+            protected void afterHookedMethod(MethodHookParam param) {
+                onZoomRatioChanged(param.thisObject, (Float) param.args[0]);
+            }
+        };
+
+        if (hookZoomManagerClass(cl, "k9.j", ratioHook, "d4", "qc")
+                || hookZoomManagerClass(cl, "X5.f", ratioHook, "e0")) {
+            XposedBridge.log(LOG + ": hook ZoomManager terpasang");
+        } else {
+            XposedBridge.log(LOG + ": hook zoom ratio gagal (mode Otomatis akan pakai 4:3)");
+        }
+    }
+
+    private static boolean hookZoomManagerClass(ClassLoader cl, String className,
+                                                XC_MethodHook hook,
+                                                String... extraFloatIntMethods) {
         try {
-            Class<?> zoomManager = XposedHelpers.findClass("X5.f", cl);
-
-            XposedHelpers.findAndHookMethod(zoomManager, "setZoomRatio", float.class,
-                    new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            onZoomRatioChanged(param.thisObject, (Float) param.args[0]);
-                        }
-                    });
-
-            XposedHelpers.findAndHookMethod(zoomManager, "e0", float.class, int.class,
-                    new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            onZoomRatioChanged(param.thisObject, (Float) param.args[0]);
-                        }
-                    });
-
-            XposedBridge.log(LOG + ": hook ZoomManager.setZoomRatio terpasang");
+            Class<?> zoomManager = XposedHelpers.findClass(className, cl);
+            XposedHelpers.findAndHookMethod(zoomManager, "setZoomRatio", float.class, hook);
+            for (String name : extraFloatIntMethods) {
+                try {
+                    XposedHelpers.findAndHookMethod(zoomManager, name,
+                            float.class, int.class, hook);
+                } catch (Throwable ignored) {
+                    // Method tidak ada di versi ROM ini.
+                }
+            }
+            XposedBridge.log(LOG + ": hook ZoomManager (" + className + ") terpasang");
+            return true;
         } catch (Throwable t) {
-            XposedBridge.log(LOG + ": hook zoom ratio gagal (mode Otomatis akan pakai 4:3): " + t);
+            XposedBridge.log(LOG + ": hook ZoomManager " + className + " gagal: " + t);
+            return false;
         }
     }
 
@@ -257,11 +339,18 @@ public class HookEntry implements IXposedHookLoadPackage {
     // ------------------------------------------------------------------
 
     private void hookShapeBackGroundView(ClassLoader cl) {
-        try {
-            Class<?> shape = XposedHelpers.findClass(
-                    "com.android.camera.ui.ShapeBackGroundView", cl);
+        // Kamera 6.7+: class pindah ke paket halo, method penyiapannya b().
+        // Kamera 6.4 : com.android.camera.ui.ShapeBackGroundView.d().
+        if (!hookShapeClass(cl, "com.xiaomi.camera.ui.base.halo.ShapeBackGroundView", "b")) {
+            hookShapeClass(cl, "com.android.camera.ui.ShapeBackGroundView", "d");
+        }
+    }
 
-            XposedHelpers.findAndHookMethod(shape, "d", new XC_MethodHook() {
+    private static boolean hookShapeClass(ClassLoader cl, String className, String method) {
+        try {
+            Class<?> shape = XposedHelpers.findClass(className, cl);
+
+            XposedHelpers.findAndHookMethod(shape, method, new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) {
                     try {
@@ -282,9 +371,11 @@ public class HookEntry implements IXposedHookLoadPackage {
                     }
                 }
             });
-            XposedBridge.log(LOG + ": hook ShapeBackGroundView.d() terpasang");
+            XposedBridge.log(LOG + ": hook ShapeBackGroundView." + method + "() terpasang");
+            return true;
         } catch (Throwable t) {
-            XposedBridge.log(LOG + ": hook ShapeBackGroundView gagal: " + t);
+            XposedBridge.log(LOG + ": hook " + className + "." + method + " gagal: " + t);
+            return false;
         }
     }
 
@@ -821,12 +912,18 @@ public class HookEntry implements IXposedHookLoadPackage {
         float value = ratio == null || Float.isNaN(ratio) ? 0f : ratio;
         // Utamakan nilai yang benar-benar tersimpan di ZoomManager (bisa saja
         // argumen hook masih nilai mentah sebelum di-clamp).
+        // Getter: n0() di kamera 6.4, j1() di kamera 6.7+.
         if (manager != null) {
-            try {
-                float committed = (Float) XposedHelpers.callMethod(manager, "n0");
-                if (committed > 0f && !Float.isNaN(committed)) value = committed;
-            } catch (Throwable ignored) {
-                // Getter tidak tersedia: pakai nilai dari argumen.
+            for (String getter : new String[]{"n0", "j1"}) {
+                try {
+                    float committed = (Float) XposedHelpers.callMethod(manager, getter);
+                    if (committed > 0f && !Float.isNaN(committed)) {
+                        value = committed;
+                        break;
+                    }
+                } catch (Throwable ignored) {
+                    // Getter tidak tersedia di versi ROM ini.
+                }
             }
         }
         if (value <= 0f) return;

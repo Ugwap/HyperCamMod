@@ -9,7 +9,7 @@ skrip, template, dan dokumentasi. Tidak perlu re-sign APK kamera, jadi tidak ken
 pengecekan signature / `sharedUserId`.
 
 > Status: **jalan** di Poco X7 Pro (`2412DPC0AG` / `rodin`), HyperOS `4.0.0.12.XPTCNXM`
-> (V816), Android 17 (SDK 37), kamera **6.4.000250.3**. Versi modul: **1.6.0**.
+> (V816), Android 17 (SDK 37), kamera **6.7.000290.4**. Versi modul: **1.6.1**.
 > Detail & batasan versi ada di [Kompatibilitas](#kompatibilitas).
 
 ## Yang dilakukan modul
@@ -48,14 +48,18 @@ Tidak menyentuh capture, video, atau Pro mode (hanya tampilan preview).
 
 ### Cara transisi zoom diperhalus
 
-Kamera membuat animator zoom di dua tempat, keduanya di-hook:
+Kamera membuat animator zoom lewat pabrik animator di dalam APK. Nama class-nya
+berubah tiap versi kamera, jadi modul mencoba beberapa titik hook:
 
-| Target hook | Dipakai oleh |
-| --- | --- |
-| `Zb.g.i(float, float)` | `FragmentZoomToggle`, `FragmentZoomPanel`, `FragmentDualMenu` |
-| `FragmentZoomToggle.Yh(float, float)` | jalur animasi cadangan saat jalur utama tidak tersedia |
+| Versi kamera | Target hook | Dipakai oleh |
+| --- | --- | --- |
+| 6.7+ | `Vr.j.m(float, float)` / `Vr.j.n(float, float)` | `I4.W` (toggle zoom) dan `I4.w` (panel zoom) |
+| 6.7+ | `ValueAnimator.start()` | merapikan animator yang sudah ditandai pabrik di atas |
+| 6.4 | `Zb.g.i(float, float)` | `FragmentZoomToggle`, `FragmentZoomPanel`, `FragmentDualMenu` |
+| 6.4 | `FragmentZoomToggle.Yh(float, float)` | jalur animasi cadangan |
 
-Durasi asli animator dibaca (`getDuration()`), lalu diskalakan:
+Durasi asli animator dibaca (`getDuration()`) setelah kamera memasangnya sendiri
+(0/100/150 ms di kamera 6.7), lalu diskalakan:
 
 - **Halus** - `durasi x 2,2`, dibatasi 220-460 ms, `DecelerateInterpolator(1.5)`
 - **Santai** - `durasi x 3,4`, dibatasi 320-700 ms
@@ -67,9 +71,14 @@ ROM lain, hook gagal dengan catatan di log dan zoom kembali ke perilaku bawaan.
 
 ### Cara mode Otomatis tahu level zoom
 
-Modul membaca rasio zoom aktif dari `ZoomManager` kamera (`X5.f`, implementasi
-`W5.a`): hook `setZoomRatio(float)` dan `e0(float, int)` (update aksi zoom), lalu
-nilai terbaru diambil lewat getter `n0()`. Ambangnya **1,05x**: 0,6x dan 1x dianggap
+Modul membaca rasio zoom aktif dari `ZoomManager` kamera:
+
+| Versi kamera | Class | Method yang di-hook |
+| --- | --- | --- |
+| 6.7+ | `k9.j` | `setZoomRatio(float)`, `d4(float, int)`, `qc(float, int)` |
+| 6.4 | `X5.f` (implementasi `W5.a`) | `setZoomRatio(float)`, `e0(float, int)` |
+
+Ambangnya **1,05x**: 0,6x dan 1x dianggap
 "belum zoom", 2x ke atas memicu layar penuh. Transisi skala dianimasikan 220 ms
 dengan `ValueAnimator` + `DecelerateInterpolator`; animasi baru dimulai saat ambang
 benar-benar terlewati (target berubah), jadi tidak diulang oleh layout listener.
@@ -99,8 +108,8 @@ internal di APK kamera.
 | Perangkat | Poco X7 Pro (`2412DPC0AG` / `rodin`) |
 | ROM | HyperOS `4.0.0.12.XPTCNXM` (`ro.miui.ui.version.name` = `V816`) |
 | Android | 17 / SDK 37 |
-| Aplikasi kamera | MiuiCamera **6.4.000250.3** (`versionCode 740002503`) |
-| Path APK | `/product/priv-app/MiuiCamera/MiuiCamera.apk` |
+| Aplikasi kamera | MiuiCamera **6.7.000290.4** (`versionCode 670002904`) |
+| Path APK | `/data/app/.../com.android.camera-.../base.apk` |
 
 ### Ketergantungan
 
@@ -110,8 +119,8 @@ internal di APK kamera.
 | id `camera_app_root` | menempelkan scrim | scrim tidak dipasang |
 | id `preview_surface_layout` + `gl_root_cover` | hitung skala crop preview | zoom dilewati, tampilan asli |
 | id `top_config_background` | memudarkan top bar | top bar tetap solid |
-| class `com.android.camera.ui.ShapeBackGroundView` method `d()` | top bar transparan (paint) | hanya efek ini hilang â€” bagian paling rapuh karena nama method di-obfuscate |
-| class `X5.f` (ZoomManager) method `setZoomRatio(F)` / `e0(FI)` / `n0()` | tahu level zoom untuk mode Otomatis | mode Otomatis jadi 4:3 (bar selalu ada) |
+| class `ShapeBackGroundView` method penyiapan: `com.xiaomi.camera.ui.base.halo.ShapeBackGroundView.b()` (6.7+) atau `com.android.camera.ui.ShapeBackGroundView.d()` (6.4) | top bar transparan (paint) | hanya efek ini hilang - bagian paling rapuh karena nama method di-obfuscate |
+| ZoomManager: `k9.j` `setZoomRatio(F)` / `d4(FI)` / `qc(FI)` (6.7+) atau `X5.f` `setZoomRatio(F)` / `e0(FI)` (6.4) | tahu level zoom untuk mode Otomatis | mode Otomatis jadi 4:3 (bar selalu ada) |
 | `SurfaceView` di dalam `preview_surface_layout` | objek yang di-zoom | zoom dilewati |
 | `SurfaceView.setCornerRadius(float)` (hidden API) | sudut preview membulat | sudut tetap kotak, dicatat di log |
 
