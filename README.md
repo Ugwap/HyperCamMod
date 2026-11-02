@@ -9,7 +9,7 @@ skrip, template, dan dokumentasi. Tidak perlu re-sign APK kamera, jadi tidak ken
 pengecekan signature / `sharedUserId`.
 
 > Status: **jalan** di Poco X7 Pro (`2412DPC0AG` / `rodin`), HyperOS `4.0.0.12.XPTCNXM`
-> (V816), Android 17 (SDK 37), kamera **6.7.000290.4**. Versi modul: **1.6.1**.
+> (V816), Android 17 (SDK 37), kamera **6.7.000290.4**. Versi modul: **1.6.2**.
 > Detail & batasan versi ada di [Kompatibilitas](#kompatibilitas).
 
 ## Yang dilakukan modul
@@ -61,8 +61,9 @@ berubah tiap versi kamera, jadi modul mencoba beberapa titik hook:
 Durasi asli animator dibaca (`getDuration()`) setelah kamera memasangnya sendiri
 (0/100/150 ms di kamera 6.7), lalu diskalakan:
 
-- **Halus** - `durasi x 2,2`, dibatasi 220-460 ms, `DecelerateInterpolator(1.5)`
-- **Santai** - `durasi x 3,4`, dibatasi 320-700 ms
+- **Halus** (default) - `durasi x 3,2`, dibatasi 320-620 ms, `PathInterpolator(0.4, 0, 0.2, 1)`
+  (mulai pelan, cepat di tengah, melambat di akhir)
+- **Santai** - `durasi x 5,0`, dibatasi 550-1000 ms, kurva sama
 - **Bawaan** - tidak diubah sama sekali
 
 Karena animator zoom kamera tetap yang dipakai (bukan animator baru buatan modul),

@@ -27,6 +27,7 @@ import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.view.animation.DecelerateInterpolator;
+import android.view.animation.PathInterpolator;
 import android.widget.FrameLayout;
 
 import java.lang.ref.WeakReference;
@@ -262,13 +263,13 @@ public class HookEntry implements IXposedHookLoadPackage {
         // base == 0 berarti kamera ingin perpindahan instan; beri durasi minimum.
         long duration;
         if (level == 1) {
-            duration = clampDuration(Math.round(base * 2.2f), 220L, 460L);
+            duration = clampDuration(Math.round(base * 3.2f), 320L, 620L);
         } else {
-            duration = clampDuration(Math.round(base * 3.4f), 320L, 700L);
+            duration = clampDuration(Math.round(base * 5.0f), 550L, 1000L);
         }
 
         anim.setDuration(duration);
-        anim.setInterpolator(new DecelerateInterpolator(1.5f));
+        anim.setInterpolator(new PathInterpolator(0.4f, 0.0f, 0.2f, 1.0f));
         logZoomAnim(base, duration);
     }
 
