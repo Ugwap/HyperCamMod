@@ -9,7 +9,7 @@ skrip, template, dan dokumentasi. Tidak perlu re-sign APK kamera, jadi tidak ken
 pengecekan signature / `sharedUserId`.
 
 > Status: **jalan** di Poco X7 Pro (`2412DPC0AG` / `rodin`), HyperOS `4.0.0.12.XPTCNXM`
-> (V816), Android 17 (SDK 37), kamera **6.7.000290.4**. Versi modul: **1.6.2**.
+> (V816), Android 17 (SDK 37), kamera **6.7.000290.4**. Versi modul: **1.6.3**.
 > Detail & batasan versi ada di [Kompatibilitas](#kompatibilitas).
 
 ## Yang dilakukan modul
@@ -41,8 +41,9 @@ pengecekan signature / `sharedUserId`.
 7. **Transisi zoom lebih halus** - animasi zoom bawaan kamera (tombol 0,6x/1x/2x dan
    snap slider) memakai `LinearInterpolator` dengan durasi yang hampir sama dengan
    selisih zoom-nya, bahkan 0 ms di beberapa kondisi, jadi terasa melompat. Modul
-   memperpanjang animator itu dan mengganti kurvanya menjadi *decelerate*:
-   **Bawaan** / **Halus** (default) / **Santai**.
+   memperpanjang animator itu, mengganti kurvanya, lalu **menyaring nilai rasio per
+   frame dengan exponential smoothing** supaya tidak ada hentakan di awal maupun di
+   akhir: **Bawaan** / **Halus** (default) / **Santai**.
 
 Tidak menyentuh capture, video, atau Pro mode (hanya tampilan preview).
 
@@ -55,8 +56,10 @@ berubah tiap versi kamera, jadi modul mencoba beberapa titik hook:
 | --- | --- | --- |
 | 6.7+ | `Vr.j.m(float, float)` / `Vr.j.n(float, float)` | `I4.W` (toggle zoom) dan `I4.w` (panel zoom) |
 | 6.7+ | `ValueAnimator.start()` | merapikan animator yang sudah ditandai pabrik di atas |
+| 6.7+ | `k9.j.setZoomRatio(float)` | perataan rasio per frame (smoothing) |
 | 6.4 | `Zb.g.i(float, float)` | `FragmentZoomToggle`, `FragmentZoomPanel`, `FragmentDualMenu` |
 | 6.4 | `FragmentZoomToggle.Yh(float, float)` | jalur animasi cadangan |
+| 6.4 | `X5.f.setZoomRatio(float)` | perataan rasio per frame (smoothing) |
 
 Durasi asli animator dibaca (`getDuration()`) setelah kamera memasangnya sendiri
 (0/100/150 ms di kamera 6.7), lalu diskalakan:
@@ -65,6 +68,21 @@ Durasi asli animator dibaca (`getDuration()`) setelah kamera memasangnya sendiri
   (mulai pelan, cepat di tengah, melambat di akhir)
 - **Santai** - `durasi x 5,0`, dibatasi 550-1000 ms, kurva sama
 - **Bawaan** - tidak diubah sama sekali
+
+Memperpanjang animator saja masih menyisakan hentakan, karena kurva gabungan
+interpolator kamera + spline pabrik tetap punya perubahan kecepatan yang tajam.
+Karena itu nilai rasio yang dikirim kamera per frame disaring lagi sebelum masuk ke
+`setZoomRatio`:
+
+```text
+current += (target - current) x (1 - e^(-dt/tau))
+```
+
+- `tau` = `0,33 x durasi animator` (Halus ±106 ms, Santai ±180 ms)
+- tick lanjutan tiap 16 ms setelah animator kamera selesai, sampai selisih ke target
+  < 0,0015 - jadi ekor gerakan tetap mulus dan tidak ada sisa zoom menggantung
+- filter hanya aktif ±2,5 detik setelah animator zoom kamera dibuat, sehingga
+  pinch-to-zoom manual tetap mengikuti jari
 
 Karena animator zoom kamera tetap yang dipakai (bukan animator baru buatan modul),
 setiap frame tetap memanggil jalur zoom resmi kamera. Kalau class target tidak ada di
