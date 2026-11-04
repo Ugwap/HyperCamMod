@@ -9,7 +9,7 @@ skrip, template, dan dokumentasi. Tidak perlu re-sign APK kamera, jadi tidak ken
 pengecekan signature / `sharedUserId`.
 
 > Status: **jalan** di Poco X7 Pro (`2412DPC0AG` / `rodin`), HyperOS `4.0.0.12.XPTCNXM`
-> (V816), Android 17 (SDK 37), kamera **6.7.000290.4**. Versi modul: **1.6.3**.
+> (V816), Android 17 (SDK 37), kamera **6.7.000290.4**. Versi modul: **1.6.4**.
 > Detail & batasan versi ada di [Kompatibilitas](#kompatibilitas).
 
 ## Yang dilakukan modul
@@ -71,18 +71,23 @@ Durasi asli animator dibaca (`getDuration()`) setelah kamera memasangnya sendiri
 
 Memperpanjang animator saja masih menyisakan hentakan, karena kurva gabungan
 interpolator kamera + spline pabrik tetap punya perubahan kecepatan yang tajam.
-Karena itu nilai rasio yang dikirim kamera per frame disaring lagi sebelum masuk ke
-`setZoomRatio`:
+Karena itu modul mengambil **rasio tujuan** dari animator (argumen kedua pabrik
+`Vr.j.m` / `Vr.j.n`, atau `Zb.g.i` di 6.4), lalu menjalankan peralihannya sendiri:
 
 ```text
 current += (target - current) x (1 - e^(-dt/tau))
 ```
 
+- titik awal diambil dari rasio zoom yang benar-benar aktif (`ZoomManager.j1()` /
+  `n0()`), bukan dari frame pertama animator
+- frame yang dikirim kamera **tidak dipakai sebagai target** - kamera 6.7 kadang
+  mengirim frame pertama yang sedikit mundur dari posisi sekarang, dan itu yang
+  dulu terlihat sebagai "zoom out kecil" sesaat setelah menekan tombol zoom
 - `tau` = `0,33 x durasi animator` (Halus ±106 ms, Santai ±180 ms)
-- tick lanjutan tiap 16 ms setelah animator kamera selesai, sampai selisih ke target
-  < 0,0015 - jadi ekor gerakan tetap mulus dan tidak ada sisa zoom menggantung
-- filter hanya aktif ±2,5 detik setelah animator zoom kamera dibuat, sehingga
-  pinch-to-zoom manual tetap mengikuti jari
+- gerakan dijamin satu arah menuju target, dengan tick lanjutan tiap 16 ms setelah
+  animator kamera selesai sampai selisih < 0,0015
+- filter hanya aktif ±2,5 detik setelah animator zoom kamera dibuat, dan langsung
+  berhenti kalau pengguna memutar zoom melewati target (pinch)
 
 Karena animator zoom kamera tetap yang dipakai (bukan animator baru buatan modul),
 setiap frame tetap memanggil jalur zoom resmi kamera. Kalau class target tidak ada di

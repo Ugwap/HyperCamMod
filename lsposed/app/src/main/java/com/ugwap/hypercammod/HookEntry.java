@@ -164,6 +164,7 @@ public class HookEntry implements IXposedHookLoadPackage {
                         protected void afterHookedMethod(MethodHookParam param) {
                             Object result = param.getResult();
                             if (result instanceof ValueAnimator) {
+                                rememberTarget((Float) param.args[1]);
                                 smoothZoomAnim((ValueAnimator) result);
                             }
                         }
@@ -183,6 +184,7 @@ public class HookEntry implements IXposedHookLoadPackage {
                             try {
                                 Object anim = XposedHelpers.getObjectField(param.thisObject, "f");
                                 if (anim instanceof ValueAnimator) {
+                                    rememberTarget((Float) param.args[1]);
                                     smoothZoomAnim((ValueAnimator) anim);
                                 }
                             } catch (Throwable ignored) {
@@ -201,6 +203,21 @@ public class HookEntry implements IXposedHookLoadPackage {
             java.util.Collections.newSetFromMap(
                     new WeakHashMap<ValueAnimator, Boolean>());
 
+    /** Nilai zoom tujuan (argumen kedua) dari animator zoom yang baru dibuat. */
+    private static volatile float sPendingTarget;
+    private static volatile long sPendingTargetAt;
+
+    private static void rememberTarget(float to) {
+        if (!(to > 0f) || Float.isNaN(to)) return;
+        sPendingTarget = to;
+        sPendingTargetAt = SystemClock.uptimeMillis();
+    }
+
+    private static float pendingTarget(long now) {
+        if (now - sPendingTargetAt > 300L) return 0f;
+        return sPendingTarget;
+    }
+
     /**
      * Tandai animator hasil pabrik animator zoom kamera. Durasi aslinya baru
      * dipasang pemanggil setelah fungsi ini, jadi perapian dilakukan di
@@ -215,6 +232,7 @@ public class HookEntry implements IXposedHookLoadPackage {
                         protected void afterHookedMethod(MethodHookParam param) {
                             Object result = param.getResult();
                             if (result instanceof ValueAnimator) {
+                                rememberTarget((Float) param.args[1]);
                                 synchronized (ZOOM_ANIMS) {
                                     ZOOM_ANIMS.add((ValueAnimator) result);
                                 }
@@ -271,7 +289,7 @@ public class HookEntry implements IXposedHookLoadPackage {
 
         anim.setDuration(duration);
         anim.setInterpolator(new PathInterpolator(0.4f, 0.0f, 0.2f, 1.0f));
-        beginSmooth(duration);
+        beginSmooth(duration, pendingTarget(SystemClock.uptimeMillis()));
         logZoomAnim(base, duration);
     }
 
@@ -280,10 +298,11 @@ public class HookEntry implements IXposedHookLoadPackage {
     // ------------------------------------------------------------------
 
     /**
-     * Kamera tetap memberi nilai rasio per frame lewat animator-nya, tapi
-     * kurvanya (gabungan interpolator kamera + spline Vr.j.f) membuat gerakan
-     * terasa menyentak. Di sini nilai rasio itu disaring lagi dengan filter
-     * eksponensial: makin dekat ke target, makin kecil langkahnya.
+     * Kamera 6.7 menggerakkan zoom lewat animator-nya sendiri, tapi kurvanya
+     * (gabungan interpolator + spline Vr.j.f) masih menyentak, dan frame
+     * pertamanya kadang sedikit mundur. Karena itu modul mengambil nilai akhir
+     * animator sebagai target, lalu meramp sendiri posisi zoom dari rasio yang
+     * sedang aktif dengan filter eksponensial - gerakannya selalu satu arah.
      *
      * Filter hanya aktif sesaat setelah animator zoom kamera dibuat, supaya
      * pinch-to-zoom tetap mengikuti jari (tidak ikut diperlambat).
@@ -311,43 +330,94 @@ public class HookEntry implements IXposedHookLoadPackage {
     }
 
     /** Mulai sesi perataan saat animator zoom kamera akan berjalan. */
-    private static void beginSmooth(long durationMs) {
+    private static void beginSmooth(long durationMs, float target) {
         if (zoomAnimLevel() <= 0) {
             sSmoothActive = false;
             return;
         }
         long now = SystemClock.uptimeMillis();
-        sSmoothApplied = sLastRatio;
-        sSmoothTarget = sLastRatio;
-        sSmoothLastAt = now;
+        if (!(target > 0.3f) || Float.isNaN(target)) {
+            // Tidak ada info target baru: jangan ganggu sesi yang sedang jalan.
+            return;
+        }
+        if (sSmoothActive && Math.abs(target - sSmoothTarget) < 0.005f) {
+            // Animator tambahan untuk gerakan yang sama: lanjutkan sesi lama.
+            return;
+        }
+        float seed = currentZoomRatio();
+        // Tanpa target yang jelas (atau sudah di target), biarkan animator
+        // kamera yang sudah diperpanjang berjalan apa adanya.
+        if (Math.abs(target - seed) < 0.005f) {
+            sSmoothActive = false;
+            return;
+        }
+        sSmoothApplied = seed;
+        sSmoothTarget = target;
+        sSmoothLastAt = 0L;
         sSmoothTau = Math.max(60f, durationMs * 0.33f);
         sSmoothUntil = now + durationMs + 2500L;
         sSmoothActive = true;
         mainHandler().removeCallbacks(SMOOTH_TICK);
     }
 
-    /** Ganti nilai rasio yang diminta kamera dengan nilai hasil perataan. */
+    /**
+     * Rasio zoom yang benar-benar aktif saat ini (bukan nilai sementara dari
+     * animator). Dipakai sebagai titik awal perataan supaya tidak ada lompatan.
+     */
+    private static float currentZoomRatio() {
+        Object manager = sZoomManager == null ? null : sZoomManager.get();
+        if (manager != null) {
+            for (String getter : new String[]{"j1", "n0"}) {
+                try {
+                    float ratio = (Float) XposedHelpers.callMethod(manager, getter);
+                    if (ratio > 0f && !Float.isNaN(ratio)) return ratio;
+                } catch (Throwable ignored) {
+                    // Getter tidak tersedia di versi ROM ini.
+                }
+            }
+        }
+        return sLastRatio;
+    }
+
+    /**
+     * Ganti nilai rasio yang diminta kamera dengan nilai hasil perataan.
+     *
+     * Selama sesi aktif, nilai frame dari kamera sengaja DIABAIKAN: kamera 6.7
+     * kadang mengirim frame pertama yang sedikit mundur dari posisi sekarang
+     * (kurva internalnya), dan itu yang terlihat sebagai "zoom out kecil".
+     * Yang dipakai hanya target akhir animator, jadi gerakan selalu satu arah.
+     */
     private static void smoothZoomRatio(XC_MethodHook.MethodHookParam param) {
         if (sSmoothApplying) return;
         float value = (Float) param.args[0];
         if (!(value > 0f) || Float.isNaN(value)) return;
 
         long now = SystemClock.uptimeMillis();
-        if (zoomAnimLevel() <= 0 || now > sSmoothUntil) {
-            sSmoothApplied = value;
-            sSmoothTarget = value;
+        if (zoomAnimLevel() <= 0 || now > sSmoothUntil || !sSmoothActive) {
+            if (zoomAnimLevel() <= 0 || now > sSmoothUntil) {
+                sSmoothApplied = value;
+                sSmoothTarget = value;
+            }
             sLastRatio = value;
             return;
         }
-        if (!sSmoothActive) {
-            sSmoothActive = true;
-            sSmoothApplied = sLastRatio;
-            sSmoothLastAt = now;
+
+        // Pengguna memutar zoom melewati target (pinch): hentikan perataan dan
+        // ikuti jari.
+        float direction = sSmoothTarget - sSmoothApplied;
+        if (direction != 0f) {
+            float overshoot = (value - sSmoothTarget) * direction;
+            if (overshoot > 0.25f) {
+                sSmoothActive = false;
+                sSmoothApplied = value;
+                sSmoothTarget = value;
+                sLastRatio = value;
+                return;
+            }
         }
 
         sZoomSetter = (Method) param.method;
         sZoomSetterTarget = param.thisObject;
-        sSmoothTarget = value;
         float applied = stepSmooth(now);
         sLastRatio = applied;
         param.args[0] = applied;
@@ -358,7 +428,8 @@ public class HookEntry implements IXposedHookLoadPackage {
 
     /** Satu langkah filter eksponensial. */
     private static float stepSmooth(long now) {
-        long dt = now - sSmoothLastAt;
+        long last = sSmoothLastAt;
+        long dt = last == 0L ? 8L : now - last;
         if (dt < 1L) dt = 1L;
         else if (dt > 100L) dt = 100L;
         sSmoothLastAt = now;
