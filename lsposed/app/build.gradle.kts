@@ -10,8 +10,8 @@ android {
         applicationId = "com.ugwap.hypercammod"
         minSdk = 29
         targetSdk = 35
-        versionCode = 15
-        versionName = "1.6.4"
+        versionCode = 16
+        versionName = "1.6.5"
     }
 
     buildTypes {

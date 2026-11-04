@@ -9,7 +9,7 @@ skrip, template, dan dokumentasi. Tidak perlu re-sign APK kamera, jadi tidak ken
 pengecekan signature / `sharedUserId`.
 
 > Status: **jalan** di Poco X7 Pro (`2412DPC0AG` / `rodin`), HyperOS `4.0.0.12.XPTCNXM`
-> (V816), Android 17 (SDK 37), kamera **6.7.000290.4**. Versi modul: **1.6.4**.
+> (V816), Android 17 (SDK 37), kamera **6.7.000290.4**. Versi modul: **1.6.5**.
 > Detail & batasan versi ada di [Kompatibilitas](#kompatibilitas).
 
 ## Yang dilakukan modul
@@ -75,7 +75,8 @@ Karena itu modul mengambil **rasio tujuan** dari animator (argumen kedua pabrik
 `Vr.j.m` / `Vr.j.n`, atau `Zb.g.i` di 6.4), lalu menjalankan peralihannya sendiri:
 
 ```text
-current += (target - current) x (1 - e^(-dt/tau))
+posisi = awal + (target - awal) x (1 - e^(-3t)) / (1 - e^(-3))
+t      = waktu berjalan / durasi animator
 ```
 
 - titik awal diambil dari rasio zoom yang benar-benar aktif (`ZoomManager.j1()` /
@@ -83,9 +84,15 @@ current += (target - current) x (1 - e^(-dt/tau))
 - frame yang dikirim kamera **tidak dipakai sebagai target** - kamera 6.7 kadang
   mengirim frame pertama yang sedikit mundur dari posisi sekarang, dan itu yang
   dulu terlihat sebagai "zoom out kecil" sesaat setelah menekan tombol zoom
-- `tau` = `0,33 x durasi animator` (Halus ±106 ms, Santai ±180 ms)
-- gerakan dijamin satu arah menuju target, dengan tick lanjutan tiap 16 ms setelah
-  animator kamera selesai sampai selisih < 0,0015
+- kurvanya sama dengan filter eksponensial lama (cepat di awal, melambat di
+  akhir), tapi dinormalisasi supaya **tepat mendarat di target saat t = 1**;
+  tanpa normalisasi masih tersisa 2-5% jarak
+- saat animator kamera berakhir, posisi dipaksa tepat di target dan frame
+  susulan tidak boleh menariknya mundur. Ini yang menghilangkan zoom-out kecil
+  **setelah** gerakan sampai di target: kamera sempat meng-commit target penuh
+  di akhir animasinya, jadi rasio modul harus sudah di titik yang sama
+- tick lanjutan tiap 16 ms menjaga gerakan tetap halus sampai animator kamera
+  benar-benar berhenti (±80 ms setelah durasi ramp)
 - filter hanya aktif ±2,5 detik setelah animator zoom kamera dibuat, dan langsung
   berhenti kalau pengguna memutar zoom melewati target (pinch)
 
