@@ -289,9 +289,9 @@ public class HookEntry implements IXposedHookLoadPackage {
         // base == 0 berarti kamera ingin perpindahan instan; beri durasi minimum.
         long duration;
         if (level == 1) {
-            duration = clampDuration(Math.round(base * 3.2f), 320L, 620L);
+            duration = clampDuration(Math.round(base * 4.5f), 440L, 880L);
         } else {
-            duration = clampDuration(Math.round(base * 5.0f), 550L, 1000L);
+            duration = clampDuration(Math.round(base * 7.0f), 750L, 1400L);
         }
 
         anim.setDuration(duration);
